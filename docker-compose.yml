@@ -1,8 +1,16 @@
 version: '3.8'
 
+# Uncomment to build locally instead of using Docker Hub
+# build: .
+
 services:
   api:
-    build: .
+    # Use pre-built image from Docker Hub (recommended)
+    image: chrisloesleindocker/image-moderation-api:latest
+
+    # Or build locally - uncomment and comment out 'image' above
+    # build: .
+
     container_name: image-moderation-api
     ports:
       - "8000:8000"

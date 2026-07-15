@@ -4,14 +4,16 @@
 
 ![GitHub Actions](https://github.com/ChrisLoes/image-moderation-api/actions/workflows/docker-test.yml/badge.svg)
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
-![Docker](https://img.shields.io/badge/docker-ready-brightgreen)
+![Docker Hub](https://img.shields.io/badge/docker%20hub-chrisloesleindocker-blue?logo=docker)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 **Production-ready REST API for automated image moderation and face detection.**
 
 Detect NSFW content and blur faces in images at scale. Built with FastAPI, MediaPipe, and NudeNet v3.
 
-[🚀 Quick Start](#quick-start) • [📖 Documentation](#documentation) • [🔧 Configuration](#configuration) • [🐳 Docker](#docker-deployment)
+🐳 **Available on Docker Hub:** [`chrisloesleindocker/image-moderation-api`](https://hub.docker.com/r/chrisloesleindocker/image-moderation-api)
+
+[🚀 Quick Start](#quick-start) • [📖 Documentation](#documentation) • [🔧 Configuration](#configuration) • [🐳 Docker Hub](#docker-deployment)
 
 </div>
 
@@ -59,7 +61,55 @@ A high-performance REST API for intelligent image moderation. Detect NSFW conten
 - Python 3.11+ or Docker
 - ~2-4 GB RAM
 
-### 1. With Docker Compose (Recommended)
+### ⚡ 60-Second Start (Docker Hub Only)
+
+No git clone needed - just run:
+
+```bash
+# Pull and run the image (takes ~1-2 min on first run)
+docker run -d -p 8000:8000 -e API_KEYS="test-key-1" chrisloesleindocker/image-moderation-api:latest
+
+# Test it
+curl http://localhost:8000/health
+
+# Open Swagger UI in browser
+# http://localhost:8000/docs (API Key: test-key-1)
+```
+
+Done! ✅
+
+---
+
+### 1. With Docker Hub (Easiest - No Clone Needed)
+
+```bash
+# Pull and run directly from Docker Hub
+docker run -d \
+  --name image-moderation \
+  -p 8000:8000 \
+  -e API_KEYS="test-key-1,test-key-2" \
+  chrisloesleindocker/image-moderation-api:latest
+
+# Check health
+curl http://localhost:8000/health
+```
+
+**Or with Docker Compose:**
+```bash
+docker compose -f - up -d <<EOF
+version: '3.8'
+services:
+  api:
+    image: chrisloesleindocker/image-moderation-api:latest
+    ports:
+      - "8000:8000"
+    environment:
+      - API_KEYS=test-key-1,test-key-2
+      - LOG_LEVEL=info
+EOF
+```
+
+### 2. With Docker Compose (Clone Repository)
 
 ```bash
 # Clone repository
@@ -77,7 +127,7 @@ docker-compose up -d
 curl http://localhost:8000/health
 ```
 
-### 2. Local Installation
+### 3. Local Installation
 
 ```bash
 # Clone and setup
@@ -94,7 +144,7 @@ cp .env.example .env
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### 3. Test the API
+### 4. Test the API
 
 **Using Swagger UI:**
 ```
@@ -201,50 +251,122 @@ curl -X POST http://localhost:8000/faces/blur \
 
 ## 🐳 Docker Deployment
 
-### Using Docker Compose
+### Option 1: Docker Hub (Recommended)
+
+Pull the pre-built image from Docker Hub:
+
+```bash
+docker pull chrisloesleindocker/image-moderation-api:latest
+docker run -d \
+  --name image-moderation \
+  -p 8000:8000 \
+  -e API_KEYS="your-secret-key" \
+  chrisloesleindocker/image-moderation-api:latest
+```
+
+**Available Tags:**
+- `latest` - Latest stable version
+- `v1.0` - Specific version tags
+
+### Option 2: Using Docker Compose
+
+With Docker Hub image (no clone needed):
 
 ```yaml
 # docker-compose.yml
 version: '3.8'
 services:
   api:
-    image: christopherloes/image-moderation-api:latest
+    image: chrisloesleindocker/image-moderation-api:latest
+    container_name: image-moderation-api
     ports:
       - "8000:8000"
     environment:
-      API_KEYS: "your-secret-key-1,your-secret-key-2"
-      FACE_DETECTION_INTENSITY: "high"
-      NSFW_DETECTION_INTENSITY: "medium"
+      - API_KEYS=your-secret-key-1,your-secret-key-2
+      - LOG_LEVEL=info
+      - FACE_DETECTION_INTENSITY=high
+      - NSFW_DETECTION_INTENSITY=medium
     volumes:
       - ./models:/app/models
       - ./logs:/app/logs
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 ```
 
-**Start:**
+Start:
 ```bash
 docker-compose up -d
 ```
 
-### Manual Docker Run
+### Option 3: Build Locally
+
+Clone and build from source:
 
 ```bash
+git clone https://github.com/ChrisLoes/image-moderation-api.git
+cd image-moderation-api
+
+# Build image
+docker build -t image-moderation-api:latest .
+
+# Run locally built image
 docker run -d \
-  --name image-moderation \
   -p 8000:8000 \
-  -e API_KEYS="your-secret-key" \
-  -e FACE_DETECTION_INTENSITY=high \
-  -e NSFW_DETECTION_INTENSITY=medium \
-  -v ./models:/app/models \
-  -v ./logs:/app/logs \
-  christopherloes/image-moderation-api:latest
+  -e API_KEYS="test-key" \
+  image-moderation-api:latest
+
+# Tag and push to your Docker Hub
+docker tag image-moderation-api:latest chrisloesleindocker/image-moderation-api:latest
+docker push chrisloesleindocker/image-moderation-api:latest
 ```
 
-### Building Locally
+### Docker Hub Repository
+
+Repository: [chrisloesleindocker/image-moderation-api](https://hub.docker.com/r/chrisloesleindocker/image-moderation-api)
+
+**Pull Command:**
+```bash
+docker pull chrisloesleindocker/image-moderation-api:latest
+```
+
+**Image Size:** ~2.0 GB  
+**Base Image:** Python 3.12-slim  
+**Architecture:** linux/amd64
+
+### Getting Updates
+
+Keep your image up to date:
 
 ```bash
-docker build -t image-moderation-api:latest .
-docker run -p 8000:8000 -e API_KEYS="test" image-moderation-api:latest
+# Pull latest version
+docker pull chrisloesleindocker/image-moderation-api:latest
+
+# Recreate container with new image
+docker-compose down
+docker-compose up -d
+```
+
+### Pushing Your Own Image
+
+If you build locally and want to push to Docker Hub:
+
+```bash
+# Login to Docker Hub
+docker login
+
+# Build image
+docker build -t chrisloesleindocker/image-moderation-api:latest .
+
+# Push to Docker Hub
+docker push chrisloesleindocker/image-moderation-api:latest
+
+# Tag a specific version
+docker tag chrisloesleindocker/image-moderation-api:latest chrisloesleindocker/image-moderation-api:v1.0.0
+docker push chrisloesleindocker/image-moderation-api:v1.0.0
 ```
 
 ---
