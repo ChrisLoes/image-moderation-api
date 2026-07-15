@@ -1,0 +1,45 @@
+version: 2
+updates:
+  # Python Dependencies
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "03:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "steffen.loeslein@googlemail.com"
+    allow:
+      - dependency-type: "all"
+    commit-message:
+      prefix: "chore(deps):"
+      include: "scope"
+
+  # Docker base image updates
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+    open-pull-requests-limit: 3
+    reviewers:
+      - "steffen.loeslein@googlemail.com"
+    commit-message:
+      prefix: "chore(docker):"
+      include: "scope"
+
+  # GitHub Actions updates
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "03:00"
+    open-pull-requests-limit: 2
+    reviewers:
+      - "steffen.loeslein@googlemail.com"
+    commit-message:
+      prefix: "chore(ci):"
+      include: "scope"

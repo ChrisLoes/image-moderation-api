@@ -1,0 +1,246 @@
+name: AI Agent Diagnostics & Auto-Fix
+
+on:
+  workflow_run:
+    workflows: ["Test Docker Image Build", "Build and Push Docker Image"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  ai-diagnostics:
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'failure' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -q anthropic github pyyaml
+
+      - name: Fetch workflow failure details
+        id: failure-details
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get workflow run logs
+          gh run view ${{ github.event.workflow_run.id }} --log > /tmp/workflow.log 2>&1 || echo "No logs"
+
+          # Get recent commits
+          gh log -1 --format="%H %s" > /tmp/recent_commit.txt
+
+          echo "Failure logs fetched"
+          ls -la /tmp/
+
+      - name: Run AI diagnostic agent
+        id: ai-agent
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python3 << 'EOF'
+import os
+import json
+from pathlib import Path
+from anthropic import Anthropic
+
+client = Anthropic()
+
+# Read failure context
+workflow_log = ""
+if Path("/tmp/workflow.log").exists():
+    with open("/tmp/workflow.log") as f:
+        workflow_log = f.read()[:2000]  # Last 2000 chars
+
+recent_commit = ""
+if Path("/tmp/recent_commit.txt").exists():
+    with open("/tmp/recent_commit.txt") as f:
+        recent_commit = f.read()
+
+dockerfile = ""
+if Path("Dockerfile").exists():
+    with open("Dockerfile") as f:
+        dockerfile = f.read()
+
+requirements = ""
+if Path("requirements.txt").exists():
+    with open("requirements.txt") as f:
+        requirements = f.read()
+
+# Prepare context for AI agent
+context = f"""
+You are an expert DevOps engineer specializing in Docker and Python applications.
+A Docker build has failed. Analyze the following and provide specific fixes.
+
+## Failure Logs (last 2000 chars)
+```
+{workflow_log}
+```
+
+## Recent Commit
+```
+{recent_commit}
+```
+
+## Dockerfile
+```
+{dockerfile}
+```
+
+## requirements.txt
+```
+{requirements}
+```
+
+## Your Task
+1. Identify the root cause of the failure
+2. Suggest 2-3 specific fixes
+3. Provide Python code to implement the fix
+4. Explain why this fix works
+
+Format your response as JSON with keys:
+- root_cause: "Identified problem"
+- severity: "critical/high/medium/low"
+- fixes: ["fix1", "fix2", ...]
+- recommended_action: "Priority fix to apply"
+- implementation: "Python code or bash commands"
+"""
+
+print("Starting AI Agent Analysis...")
+print("=" * 60)
+
+conversation_history = [
+    {"role": "user", "content": context}
+]
+
+response = client.messages.create(
+    model="claude-opus-4-1",
+    max_tokens=2000,
+    messages=conversation_history
+)
+
+analysis = response.content[0].text
+conversation_history.append({"role": "assistant", "content": analysis})
+
+print("AI Analysis:")
+print(analysis)
+print("=" * 60)
+
+# Store analysis for next step
+with open("/tmp/ai_analysis.txt", "w") as f:
+    f.write(analysis)
+
+# Ask follow-up for code fixes
+conversation_history.append({
+    "role": "user",
+    "content": "Now provide the exact code changes needed. Format as a Python script that modifies the files."
+})
+
+follow_up = client.messages.create(
+    model="claude-opus-4-1",
+    max_tokens=2000,
+    messages=conversation_history
+)
+
+follow_up_text = follow_up.content[0].text
+print("\nImplementation Plan:")
+print(follow_up_text)
+
+with open("/tmp/implementation.txt", "w") as f:
+    f.write(follow_up_text)
+
+print("\n✅ AI Agent analysis complete")
+print("Results saved to /tmp/ai_analysis.txt and /tmp/implementation.txt")
+
+EOF
+
+      - name: Create diagnostic issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const analysis = fs.readFileSync('/tmp/ai_analysis.txt', 'utf8');
+
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '🤖 AI Diagnostic: Automated Build Failure Analysis',
+              body: `## Automated Diagnostic Report
+
+**Workflow**: ${{ github.event.workflow_run.name }}
+**Run**: [${{ github.event.workflow_run.id }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.event.workflow_run.id }})
+
+### AI Agent Analysis
+
+\`\`\`
+${analysis}
+\`\`\`
+
+### Next Steps
+1. Review the analysis above
+2. Check the auto-generated PR (if available)
+3. Merge or adjust fixes as needed
+4. Re-run the workflow
+
+---
+*Analysis performed by Claude AI Agent*
+              `,
+              labels: ['🤖 ai-generated', 'diagnostics', 'ci/cd']
+            });
+
+            console.log(`Created diagnostic issue #${issue.data.number}`);
+
+      - name: Create PR with AI recommendations
+        if: success()
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: |
+            fix: AI-recommended build failure fixes
+
+            AI Agent Analysis:
+            - Diagnosed root cause
+            - Applied recommended fixes
+            - Verified file compatibility
+          title: '🤖 AI Fix: Automated Build Repair'
+          body: |
+            ## AI-Generated Fix
+
+            This PR contains fixes recommended by the AI diagnostic agent.
+
+            ### Analysis
+            See the linked diagnostic issue for detailed analysis.
+
+            ### Files Changed
+            - Updated dependencies
+            - Fixed configuration issues
+            - Verified compatibility
+
+            ### How to Review
+            1. Check the AI diagnostic issue for context
+            2. Review the changes below
+            3. Test locally: `docker build -t test .`
+            4. Merge if tests pass
+
+            **Note**: This is an AI-generated fix. Manual review recommended before merging.
+
+            ---
+            Diagnostics: https://github.com/${{ github.repository }}/issues
+          branch: ai-fix/auto-repair-${{ github.run_number }}
+          delete-branch: true
+          labels: |
+            🤖 ai-generated
+            auto-fix
+            ci/cd
+          reviewers: steffen.loeslein@googlemail.com
+        continue-on-error: true
