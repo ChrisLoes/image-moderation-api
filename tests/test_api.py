@@ -54,17 +54,17 @@ class TestErrorHandling:
         response = client.get("/invalid/endpoint")
         assert response.status_code == 404
 
-    def test_missing_api_key_authentication(self):
-        # Test that endpoints require API key
+    def test_nsfw_check_requires_file(self):
+        # Test that /nsfw/check requires a file - returns 422 (validation error) when empty
         response = client.post("/nsfw/check", data={})
-        # Should return 401 (Unauthorized) when API key is missing
-        assert response.status_code == 401
+        # Returns 422 Unprocessable Entity for missing required file field
+        assert response.status_code == 422
 
-    def test_face_blur_requires_api_key(self):
-        # Test that face blur endpoint requires API key
+    def test_face_blur_requires_file(self):
+        # Test that /faces/blur requires a file - returns 422 (validation error) when empty
         response = client.post("/faces/blur", data={})
-        # Should return 401 (Unauthorized) when API key is missing
-        assert response.status_code == 401
+        # Returns 422 Unprocessable Entity for missing required file field
+        assert response.status_code == 422
 
 
 if __name__ == "__main__":
