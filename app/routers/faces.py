@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import mediapipe as mp
+import logging
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, status
 from typing import Optional
 from app.auth import verify_api_key
@@ -9,6 +10,7 @@ from app.utils import validate_image, image_to_base64
 from app.config import settings
 
 router = APIRouter(prefix="/faces", tags=["Face Detection"])
+logger = logging.getLogger(__name__)
 
 mp_face_detection = mp.solutions.face_detection
 
@@ -17,7 +19,9 @@ def get_face_detector(confidence: float | None = None):
     """Get face detector with specified confidence threshold."""
     threshold = confidence or settings.face_detection_confidence
     return mp_face_detection.FaceDetection(
-        model_selection=0, min_detection_confidence=threshold
+        static_image_mode=True,  # ESSENTIAL for static images - enables face tracking across frames
+        model_selection=0,  # 0=short-range (efficient, <2m), 1=full-range (slower, up to 5m)
+        min_detection_confidence=threshold
     )
 
 
