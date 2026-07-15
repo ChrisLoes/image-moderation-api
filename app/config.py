@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     # Face Detection Settings
     face_blur_strength: int = int(os.getenv("FACE_BLUR_STRENGTH", "25"))
     face_detection_confidence: float = float(os.getenv("FACE_DETECTION_CONFIDENCE", "0.5"))
+    face_blur_padding: int = int(os.getenv("FACE_BLUR_PADDING", "10"))
     # Intensity levels: low (0.3), medium (0.5), high (0.8) - can be overridden per request
     face_detection_intensity: str = os.getenv("FACE_DETECTION_INTENSITY", "medium")
 

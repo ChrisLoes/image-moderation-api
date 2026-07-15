@@ -58,6 +58,7 @@ async def blur_faces(
     intensity: Optional[str] = None,
     blur_strength: Optional[int] = None,
     confidence_threshold: Optional[float] = None,
+    face_padding: Optional[int] = None,
     api_key: str = Depends(verify_api_key),
 ) -> BlurFacesResponse:
     """
@@ -70,7 +71,7 @@ async def blur_faces(
     4. Returns blurred image as base64-encoded PNG
 
     ## Parameter Priority (highest to lowest)
-    1. Explicit parameters (`blur_strength`, `confidence_threshold`)
+    1. Explicit parameters (`blur_strength`, `confidence_threshold`, `face_padding`)
     2. `intensity` level (low/medium/high)
     3. Environment/config defaults
 
@@ -83,8 +84,9 @@ async def blur_faces(
     - Basic: `POST /faces/blur -F "file=@image.jpg"`
     - High intensity: `POST /faces/blur -F "file=@image.jpg" -F "intensity=high"`
     - Custom blur: `POST /faces/blur -F "file=@image.jpg" -F "blur_strength=35" -F "confidence_threshold=0.7"`
+    - With padding: `POST /faces/blur -F "file=@image.jpg" -F "blur_strength=25" -F "face_padding=20"`
     """
-    logger.debug(f"Face blur request - intensity: {intensity}, blur_strength: {blur_strength}")
+    logger.debug(f"Face blur request - intensity: {intensity}, blur_strength: {blur_strength}, face_padding: {face_padding}")
 
     # Validate image
     pil_image = await validate_image(file)
@@ -105,6 +107,12 @@ async def blur_faces(
     if blur_k % 2 == 0:
         blur_k += 1
 
+    # Get face padding - priority: direct param > config
+    if face_padding is not None:
+        padding = face_padding
+    else:
+        padding = settings.face_blur_padding
+
     # Get detection confidence - priority: direct param > intensity > config
     if confidence_threshold is not None:
         detect_confidence = confidence_threshold
@@ -122,10 +130,10 @@ async def blur_faces(
         for detection in results.detections:
             # Get bounding box
             bbox = detection.location_data.relative_bounding_box
-            x_min = max(0, int(bbox.xmin * w) - 10)
-            y_min = max(0, int(bbox.ymin * h) - 10)
-            x_max = min(w, int((bbox.xmin + bbox.width) * w) + 10)
-            y_max = min(h, int((bbox.ymin + bbox.height) * h) + 10)
+            x_min = max(0, int(bbox.xmin * w) - padding)
+            y_min = max(0, int(bbox.ymin * h) - padding)
+            x_max = min(w, int((bbox.xmin + bbox.width) * w) + padding)
+            y_max = min(h, int((bbox.ymin + bbox.height) * h) + padding)
 
             # Apply blur to face region
             face_region = cv_image[y_min:y_max, x_min:x_max]
@@ -149,7 +157,7 @@ async def blur_faces(
 
     logger.info(
         f"Face blur completed - detected: {faces_detected}, "
-        f"blur_strength: {blur_k}, confidence: {detect_confidence}"
+        f"blur_strength: {blur_k}, confidence: {detect_confidence}, padding: {padding}"
     )
 
     return response
