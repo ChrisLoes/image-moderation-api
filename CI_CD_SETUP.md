@@ -9,6 +9,21 @@ Du hast jetzt eine **vollständige automatisierte CI/CD-Pipeline** mit:
 - ✅ **Docker Hub Push** (automatisch)
 - ✅ **Dependabot** (Sicherheits-Updates)
 
+## ⚡ Auto-Merge Security Updates
+
+**Neu:** Security Updates werden automatisch getestet und gepublished!
+
+Wenn Dependabot einen Security Update erstellt:
+1. ✅ Tests laufen automatisch
+2. ✅ Docker Image wird gebaut
+3. ✅ Wenn erfolgreich → PR wird automatisch merged
+4. 🚀 Neues Image wird zu Docker Hub gepusht
+5. 💬 PR erhält automatische Kommentare
+
+**Keine manuellen Arbeiten nötig!**
+
+---
+
 ## 🚀 Setup in 3 Minuten
 
 ### 1. GitHub Secrets hinzufügen
@@ -75,9 +90,10 @@ Pull Request mit Fixes
 | Unit Tests | Jeder Push/PR | 2-3 min | Testet Python Code |
 | Docker Test | Jeder Push/PR | 3-5 min | Baut & testet Image |
 | Docker Push | Push zu main, Tags | 5-8 min | Pushed zu Docker Hub |
+| Auto-Merge Security | Dependabot PR | 5-10 min | Tests + Merge + Publish |
 | Dependabot | Montag 3 Uhr | - | Prüft Updates |
-| Auto-Fix | Bei Fehlern | 2-3 min | Versucht Fixes |
-| AI Diagnostics | Bei Fehlern | 2-3 min | Claude AI Analyse |
+| Auto-Fix | Manuell | 2-3 min | Versucht Fixes |
+| AI Diagnostics | Manuell | 2-3 min | Claude AI Analyse |
 
 ## ✅ Test-Beispiel: Erste Pipeline
 
