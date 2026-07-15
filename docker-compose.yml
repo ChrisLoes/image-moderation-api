@@ -7,11 +7,29 @@ services:
     ports:
       - "8000:8000"
     environment:
+      # API Authentication
       - API_KEYS=test-key-1,test-key-2
       - LOG_LEVEL=info
+
+      # Face Detection & Blurring
+      - FACE_DETECTION_INTENSITY=medium
+      - FACE_DETECTION_CONFIDENCE=0.5
       - FACE_BLUR_STRENGTH=25
+
+      # NSFW Detection
+      - NSFW_DETECTION_INTENSITY=medium
       - NSFW_THRESHOLD=0.6
+
+      # Image Constraints
+      - MAX_FILE_SIZE=8388608
+      - MAX_IMAGE_WIDTH=4000
+      - MAX_IMAGE_HEIGHT=4000
+
+      # Server
+      - HOST=0.0.0.0
+      - PORT=8000
     volumes:
+      - ./models:/app/models
       - ./logs:/app/logs
     restart: unless-stopped
     healthcheck:

@@ -1,14 +1,56 @@
 import logging
-from fastapi import FastAPI
+import logging.handlers
+import os
+import time
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from app.config import settings
 from app.models import HealthResponse
 from app.routers import faces, nsfw
 
-# Configure logging
-logging.basicConfig(level=settings.log_level.upper())
+# Setup logging directory
+os.makedirs("logs", exist_ok=True)
+
+# Configure logging with both console and file output
+log_level = settings.log_level.upper()
+log_format = logging.Formatter(
+    fmt="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+
+# Root logger
+root_logger = logging.getLogger()
+root_logger.setLevel(log_level)
+
+# Console handler
+console_handler = logging.StreamHandler()
+console_handler.setLevel(log_level)
+console_handler.setFormatter(log_format)
+root_logger.addHandler(console_handler)
+
+# File handler (rotating, max 10 files of 10 MB each)
+file_handler = logging.handlers.RotatingFileHandler(
+    "logs/api.log",
+    maxBytes=10 * 1024 * 1024,  # 10 MB
+    backupCount=10,
+)
+file_handler.setLevel(log_level)
+file_handler.setFormatter(log_format)
+root_logger.addHandler(file_handler)
+
+# Separate error log file
+error_handler = logging.handlers.RotatingFileHandler(
+    "logs/error.log",
+    maxBytes=10 * 1024 * 1024,
+    backupCount=5,
+)
+error_handler.setLevel(logging.ERROR)
+error_handler.setFormatter(log_format)
+root_logger.addHandler(error_handler)
+
 logger = logging.getLogger(__name__)
+logger.info(f"Logging configured at level: {log_level}")
 
 # Create FastAPI app
 app = FastAPI(
@@ -20,6 +62,41 @@ app = FastAPI(
     openapi_url="/openapi.json",
 )
 
+# Request logging middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Log all incoming requests and outgoing responses."""
+    request_id = str(time.time()).replace(".", "")[:12]
+
+    # Log incoming request
+    logger.info(
+        f"[{request_id}] {request.method} {request.url.path} - "
+        f"Client: {request.client.host if request.client else 'unknown'}"
+    )
+
+    start_time = time.time()
+
+    try:
+        response = await call_next(request)
+        process_time = time.time() - start_time
+
+        # Log outgoing response
+        logger.info(
+            f"[{request_id}] Response {response.status_code} - "
+            f"Duration: {process_time:.3f}s"
+        )
+
+        return response
+    except Exception as e:
+        process_time = time.time() - start_time
+        logger.error(
+            f"[{request_id}] Request failed after {process_time:.3f}s - "
+            f"Error: {str(e)}",
+            exc_info=True,
+        )
+        raise
+
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -29,17 +106,79 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Startup event
+@app.on_event("startup")
+async def startup_event():
+    """Log startup information."""
+    logger.info("=" * 60)
+    logger.info("MediaPipe NSFW Detection API Starting")
+    logger.info("=" * 60)
+    logger.info(f"API Version: 1.0.0")
+    logger.info(f"Environment: {os.getenv('ENVIRONMENT', 'production')}")
+    logger.info(f"Log Level: {log_level}")
+    logger.info(f"Face Detection Intensity: {settings.face_detection_intensity}")
+    logger.info(f"NSFW Detection Intensity: {settings.nsfw_detection_intensity}")
+    logger.info("=" * 60)
+
+
+# Shutdown event
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Log shutdown information."""
+    logger.info("=" * 60)
+    logger.info("MediaPipe NSFW Detection API Shutting Down")
+    logger.info("=" * 60)
+
+
 # Include routers
 app.include_router(faces.router)
 app.include_router(nsfw.router)
 
 
-@app.get("/health", response_model=HealthResponse, summary="Health check")
+@app.get(
+    "/health",
+    response_model=HealthResponse,
+    summary="Health check",
+    description="Check API and service health status. "
+    "Use this endpoint for monitoring and load balancer health checks.",
+    responses={
+        200: {
+            "description": "System is healthy",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "healthy",
+                        "version": "1.0.0",
+                        "services": {
+                            "face_detection": "ready",
+                            "nsfw_detection": "ready",
+                        },
+                    }
+                }
+            },
+        },
+    },
+    tags=["System"],
+)
 async def health_check() -> HealthResponse:
     """
-    Health check endpoint.
+    Check API and service availability.
 
-    Returns status of API and all services.
+    ## Response Status Values
+    - **healthy**: All services operational
+    - **degraded**: Some services unavailable but core functionality works
+    - **unhealthy**: Critical services unavailable
+
+    ## Service Status Values
+    - **ready**: Service available and responding
+    - **unavailable**: Service not available (e.g., model missing)
+    - **degraded**: Service available but operating at reduced capacity
+
+    This endpoint does not require authentication and can be used for:
+    - Kubernetes/Docker health checks
+    - Load balancer probes
+    - Monitoring dashboards
+    - Readiness/liveness checks
     """
     return HealthResponse(
         status="healthy",
@@ -51,14 +190,39 @@ async def health_check() -> HealthResponse:
     )
 
 
-@app.get("/", summary="API Root")
+@app.get(
+    "/",
+    summary="API Welcome",
+    description="Root endpoint with API information and documentation links.",
+    tags=["System"],
+)
 async def root():
-    """Welcome endpoint."""
+    """
+    Welcome to MediaPipe NSFW Detection API.
+
+    ## Available Endpoints
+    - **Face Detection & Blurring**: `POST /faces/blur` - Detect and blur faces
+    - **NSFW Content Detection**: `POST /nsfw/check` - Analyze images for adult content
+    - **Health Check**: `GET /health` - System status
+    - **Documentation**: `/docs` (Swagger UI), `/redoc` (ReDoc)
+
+    ## Quick Start
+    1. Use API key from `X-API-Key` header
+    2. POST image file to `/faces/blur` or `/nsfw/check`
+    3. Receive JSON response with results
+
+    See `/docs` for interactive API explorer.
+    """
     return {
         "message": "MediaPipe NSFW Detection API",
         "version": "1.0.0",
-        "docs": "/docs",
-        "redoc": "/redoc",
+        "docs": "/docs (Swagger UI)",
+        "redoc": "/redoc (ReDoc documentation)",
+        "endpoints": {
+            "faces": "/faces/blur (POST)",
+            "nsfw": "/nsfw/check (POST)",
+            "health": "/health (GET)",
+        },
     }
 
 

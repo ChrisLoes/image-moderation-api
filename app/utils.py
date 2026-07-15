@@ -1,16 +1,35 @@
 import base64
 import io
+import logging
 from PIL import Image
 from fastapi import UploadFile, HTTPException, status
 from app.config import settings
 
+logger = logging.getLogger(__name__)
 
-ALLOWED_FORMATS = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+# Register HEIF opener for PIL
+try:
+    import pillow_heif
+    pillow_heif.register_heif_opener()
+    logger.info("HEIF/HEIC support enabled via pillow-heif")
+except ImportError:
+    logger.warning("pillow-heif not installed - HEIF/HEIC support unavailable")
+
+ALLOWED_FORMATS = {
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+    "image/heif",
+    "image/heic",
+}
 MAGIC_NUMBERS = {
     b"\xff\xd8\xff": "image/jpeg",
     b"\x89\x50\x4e\x47": "image/png",
     b"\x47\x49\x46\x38": "image/gif",
     b"\x52\x49\x46\x46": "image/webp",
+    b"\x00\x00\x00\x18ftypheif": "image/heif",  # HEIF
+    b"\x00\x00\x00\x18ftypheic": "image/heic",  # HEIC
 }
 
 
@@ -25,8 +44,10 @@ async def validate_image(file: UploadFile) -> Image.Image:
     if file.content_type and file.content_type not in ALLOWED_FORMATS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported image format. Allowed: JPEG, PNG, GIF, WebP",
+            detail=f"Unsupported image format. Allowed: JPEG, PNG, GIF, WebP, HEIF, HEIC (iPhone)",
         )
+
+    logger.debug(f"Image validation started - file: {file.filename}, type: {file.content_type}")
 
     # Read file content
     contents = await file.read()

@@ -11,27 +11,47 @@ from app.config import settings
 router = APIRouter(prefix="/faces", tags=["Face Detection"])
 
 mp_face_detection = mp.solutions.face_detection
-face_detector = None
 
 
-def get_face_detector():
-    """Lazy load face detector."""
-    global face_detector
-    if face_detector is None:
-        face_detector = mp_face_detection.FaceDetection(
-            model_selection=0, min_detection_confidence=settings.face_detection_confidence
-        )
-    return face_detector
+def get_face_detector(confidence: float | None = None):
+    """Get face detector with specified confidence threshold."""
+    threshold = confidence or settings.face_detection_confidence
+    return mp_face_detection.FaceDetection(
+        model_selection=0, min_detection_confidence=threshold
+    )
 
 
 @router.post(
     "/blur",
     response_model=BlurFacesResponse,
-    summary="Blur faces in image",
-    description="Detect and blur all faces in the provided image",
+    summary="Detect and blur faces in image",
+    description="Detect all faces in an image using MediaPipe and apply configurable blur effect. "
+    "Supports three intensity levels for automatic configuration or manual parameter tuning.",
+    responses={
+        200: {
+            "description": "Successfully processed image",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "success": True,
+                        "message": "Successfully processed image and blurred 2 face(s)",
+                        "faces_detected": 2,
+                        "processed_image_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+                    }
+                }
+            },
+        },
+        400: {"description": "Invalid image format or dimensions"},
+        401: {"description": "Missing or invalid API key"},
+        413: {"description": "File too large (exceeds MAX_FILE_SIZE)"},
+    },
 )
 async def blur_faces(
-    file: UploadFile = File(..., description="Image file (JPEG, PNG, GIF, WebP)"),
+    file: UploadFile = File(
+        ...,
+        description="Image file to process (JPEG, PNG, GIF, WebP). Max 8 MB, max 4000×4000 px.",
+    ),
+    intensity: Optional[str] = None,
     blur_strength: Optional[int] = None,
     confidence_threshold: Optional[float] = None,
     api_key: str = Depends(verify_api_key),
@@ -39,24 +59,58 @@ async def blur_faces(
     """
     Detect faces in image and apply blur effect.
 
-    **Parameters:**
-    - `blur_strength`: Blur kernel size (1-50, default from config)
-    - `confidence_threshold`: Face detection confidence (0.0-1.0, overrides config)
+    ## How It Works
+    1. Receives image file and configuration parameters
+    2. Uses MediaPipe face detection to locate faces
+    3. Applies Gaussian blur to detected face regions
+    4. Returns blurred image as base64-encoded PNG
+
+    ## Parameter Priority (highest to lowest)
+    1. Explicit parameters (`blur_strength`, `confidence_threshold`)
+    2. `intensity` level (low/medium/high)
+    3. Environment/config defaults
+
+    ## Intensity Levels
+    - **low**: Confidence=0.3, Blur=11px (minimal, only obvious faces)
+    - **medium**: Confidence=0.5, Blur=25px (balanced, recommended)
+    - **high**: Confidence=0.8, Blur=41px (aggressive, all possible faces)
+
+    ## Examples
+    - Basic: `POST /faces/blur -F "file=@image.jpg"`
+    - High intensity: `POST /faces/blur -F "file=@image.jpg" -F "intensity=high"`
+    - Custom blur: `POST /faces/blur -F "file=@image.jpg" -F "blur_strength=35" -F "confidence_threshold=0.7"`
     """
+    logger.debug(f"Face blur request - intensity: {intensity}, blur_strength: {blur_strength}")
+
     # Validate image
     pil_image = await validate_image(file)
+    logger.debug(f"Image validated - size: {pil_image.size}")
 
     # Convert PIL Image to OpenCV format
     cv_image = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
     h, w = cv_image.shape[:2]
 
-    # Get blur parameters
-    blur_k = blur_strength or settings.face_blur_strength
+    # Get blur parameters - priority: direct param > intensity > config
+    if blur_strength is not None:
+        blur_k = blur_strength
+    elif intensity:
+        blur_k = settings.get_blur_strength(intensity)
+    else:
+        blur_k = settings.face_blur_strength
+
     if blur_k % 2 == 0:
         blur_k += 1
 
-    # Detect faces
-    detector = get_face_detector()
+    # Get detection confidence - priority: direct param > intensity > config
+    if confidence_threshold is not None:
+        detect_confidence = confidence_threshold
+    elif intensity:
+        detect_confidence = settings.get_face_detection_confidence(intensity)
+    else:
+        detect_confidence = settings.face_detection_confidence
+
+    # Detect faces with appropriate confidence
+    detector = get_face_detector(detect_confidence)
     results = detector.process(cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB))
 
     faces_detected = 0
@@ -82,9 +136,16 @@ async def blur_faces(
     result_pil = PIL.Image.fromarray(result_pil)
     base64_image = image_to_base64(result_pil)
 
-    return BlurFacesResponse(
+    response = BlurFacesResponse(
         success=True,
         message=f"Successfully processed image and blurred {faces_detected} face(s)",
         faces_detected=faces_detected,
         processed_image_base64=base64_image,
     )
+
+    logger.info(
+        f"Face blur completed - detected: {faces_detected}, "
+        f"blur_strength: {blur_k}, confidence: {detect_confidence}"
+    )
+
+    return response
