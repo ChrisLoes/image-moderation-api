@@ -10,3 +10,6 @@ numpy==1.26.0
 mediapipe==0.10.35
 opencv-python==4.8.1.78
 onnxruntime==1.27.0
+pytest==7.4.4
+pytest-cov==4.1.0
+pytest-asyncio==0.23.2
