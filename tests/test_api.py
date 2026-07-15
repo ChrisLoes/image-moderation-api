@@ -55,10 +55,16 @@ class TestErrorHandling:
         assert response.status_code == 404
 
     def test_missing_api_key_authentication(self):
-        # Assuming auth is implemented
-        response = client.post("/analyze/nsfw", json={})
-        # Should either return 401/403 or accept without key depending on config
-        assert response.status_code in [200, 401, 403, 422]
+        # Test that endpoints require API key
+        response = client.post("/nsfw/check", data={})
+        # Should return 401 (Unauthorized) when API key is missing
+        assert response.status_code == 401
+
+    def test_face_blur_requires_api_key(self):
+        # Test that face blur endpoint requires API key
+        response = client.post("/faces/blur", data={})
+        # Should return 401 (Unauthorized) when API key is missing
+        assert response.status_code == 401
 
 
 if __name__ == "__main__":
