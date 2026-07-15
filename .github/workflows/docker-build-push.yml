@@ -12,9 +12,6 @@ on:
       - main
       - master
 
-env:
-  REGISTRY: docker.io
-
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
@@ -40,12 +37,12 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/image-moderation-api
+          images: docker.io/${{ secrets.DOCKERHUB_USERNAME }}/image-moderation-api
           tags: |
             type=ref,event=branch
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=sha,prefix={{branch}}-
+            type=sha
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push Docker image
@@ -55,18 +52,17 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
+          cache-from: type=registry,ref=docker.io/${{ secrets.DOCKERHUB_USERNAME }}/image-moderation-api:buildcache
+          cache-to: type=registry,ref=docker.io/${{ secrets.DOCKERHUB_USERNAME }}/image-moderation-api:buildcache,mode=max
 
-  notify-deployment:
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
-    steps:
       - name: Log deployment info
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
         run: |
           echo "✅ Image bereitgestellt!"
           echo "Registry: Docker Hub"
-          echo "Image: docker.io/${{ secrets.DOCKERHUB_USERNAME }}/mediapipe-nsfw-api"
-          echo "Tag: latest"
+          echo "Image: docker.io/${{ secrets.DOCKERHUB_USERNAME }}/image-moderation-api"
+          echo "Tag: ${{ github.ref_name }}"
+          echo ""
+          echo "Pull mit:"
+          echo "docker pull ${{ secrets.DOCKERHUB_USERNAME }}/image-moderation-api:${{ github.ref_name }}"
+          echo "docker pull ${{ secrets.DOCKERHUB_USERNAME }}/image-moderation-api:latest"
