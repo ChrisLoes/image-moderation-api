@@ -1,77 +1,228 @@
-# MediaPipe NSFW Detection API
+# Image Moderation API
 
-A high-performance REST API for image processing with two core features:
-- **Face Detection & Blurring** using MediaPipe
-- **NSFW Content Detection** using NudeNet v3 (ONNX Runtime)
+<div align="center">
 
-All requests require API key authentication. The API exposes comprehensive OpenAPI/Swagger documentation.
+![GitHub Actions](https://github.com/ChrisLoes/image-moderation-api/actions/workflows/docker-test.yml/badge.svg)
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
+![Docker](https://img.shields.io/badge/docker-ready-brightgreen)
+![License](https://img.shields.io/badge/license-MIT-green)
+
+**Production-ready REST API for automated image moderation and face detection.**
+
+Detect NSFW content and blur faces in images at scale. Built with FastAPI, MediaPipe, and NudeNet v3.
+
+[🚀 Quick Start](#quick-start) • [📖 Documentation](#documentation) • [🔧 Configuration](#configuration) • [🐳 Docker](#docker-deployment)
+
+</div>
+
+---
+
+## Overview
+
+A high-performance REST API for intelligent image moderation. Detect NSFW content, blur faces, and moderate user-generated content automatically.
+
+**Perfect for:**
+- 🎨 Content platforms & marketplaces
+- 📱 Social media applications  
+- 🛡️ User safety & compliance
+- 🏢 Enterprise content filtering
+- 👨‍💼 Corporate policy enforcement
+
+---
 
 ## Features
 
-✅ Face detection and blurring with configurable blur strength  
-✅ NSFW content detection using NudeNet v3 (ONNX)  
-✅ Adjustable confidence thresholds (configurable without restart)  
-✅ Support for JPEG, PNG, GIF, WebP (8 MB, max 4000×4000 px)  
-✅ API Key authentication (X-API-Key header)  
-✅ OpenAPI/Swagger UI (`/docs`)  
-✅ Comprehensive error handling  
-✅ Docker-ready for easy deployment  
+### Core Capabilities
+- 🔍 **NSFW Detection** - Classify images as safe/NSFW using NudeNet v3 (ONNX)
+- 👤 **Face Detection & Blur** - Detect and blur faces using MediaPipe
+- ⚡ **High Performance** - Optimized for low-latency, high-throughput processing
+- 🔐 **Secure by Default** - API key authentication, request validation
+- 📊 **Configurable** - Fine-tune sensitivity without code changes
+- 🐳 **Docker Ready** - Containerized, production-grade deployment
+- 📁 **Format Support** - JPEG, PNG, GIF, WebP, HEIF, HEIC (iPhone)
+- 📈 **Comprehensive Logging** - Structured logs with request tracking
+- 🔄 **Async Processing** - Non-blocking async handling with FastAPI
 
-## Installation
+### Advanced Features
+- 🎚️ **Intensity Levels** - Preset configurations (low/medium/high)
+- 🔧 **Per-Request Overrides** - Fine-tune each request independently
+- 📊 **Detailed Analytics** - Confidence scores and detailed breakdowns
+- 🏥 **Health Checks** - Built-in service health monitoring
+- 🔐 **Multi-Key Auth** - Support multiple API keys
+- 📚 **Interactive Docs** - Swagger UI & ReDoc
 
-### Requirements
-- Python 3.11+
-- Docker & Docker Compose (for containerized deployment)
+---
 
-### Local Setup
+## 🚀 Quick Start
+
+### Prerequisites
+- Python 3.11+ or Docker
+- ~2-4 GB RAM
+
+### 1. With Docker Compose (Recommended)
 
 ```bash
-git clone https://github.com/yourusername/mediapipe-nsfw-api.git
-cd mediapipe-nsfw-api
+# Clone repository
+git clone https://github.com/ChrisLoes/image-moderation-api.git
+cd image-moderation-api
 
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Copy environment file
+# Configure
 cp .env.example .env
+# Edit .env with your API keys
 
-# Download NudeNet v3 model (required for NSFW detection)
-mkdir -p models
-# Download from: https://github.com/notAI-tech/NudeNet/releases/tag/v3
-# Place classifier_nsfw.onnx in models/ directory
+# Start
+docker-compose up -d
+
+# Access
+curl http://localhost:8000/health
 ```
 
-### Run Locally
+### 2. Local Installation
 
 ```bash
-# Set API keys
-export API_KEYS="your-secret-key-1,your-secret-key-2"
+# Clone and setup
+git clone https://github.com/ChrisLoes/image-moderation-api.git
+cd image-moderation-api
 
-# Start server
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+
+pip install -r requirements.txt
+cp .env.example .env
+
+# Start
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Access Swagger UI: `http://localhost:8000/docs`
+### 3. Test the API
 
-## Docker Deployment
-
-### Build Image
-
-```bash
-docker build -t mediapipe-nsfw-api:latest .
+**Using Swagger UI:**
+```
+Open: http://localhost:8000/docs
+Authorize with: test-key-1
+Try any endpoint
 ```
 
-### Run with Docker Compose
-
+**Using cURL:**
 ```bash
-# Copy environment file
-cp .env.example .env
+# Detect NSFW content
+curl -X POST http://localhost:8000/nsfw/check \
+  -H "X-API-Key: test-key-1" \
+  -F "file=@image.jpg"
 
-# Edit .env with your API keys and settings
+# Blur faces
+curl -X POST http://localhost:8000/faces/blur \
+  -H "X-API-Key: test-key-1" \
+  -F "file=@image.jpg" \
+  -F "intensity=high"
+```
+
+---
+
+## API Endpoints
+
+### 🏥 Health Check
+```bash
+GET /health
+```
+Check service health and readiness.
+
+### 🚨 Detect NSFW Content
+```bash
+POST /nsfw/check
+```
+
+**Request:**
+```bash
+curl -X POST http://localhost:8000/nsfw/check \
+  -H "X-API-Key: test-key-1" \
+  -F "file=@image.jpg" \
+  -F "intensity=high" \
+  -F "return_details=true"
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "is_nsfw": false,
+  "confidence": 0.95,
+  "primary_detection": "safe",
+  "detections": {
+    "safe": 0.95,
+    "partially_nude": 0.04,
+    "nude": 0.01
+  }
+}
+```
+
+**Parameters:**
+| Name | Type | Default | Description |
+|------|------|---------|-------------|
+| `file` | File | required | Image file (JPEG, PNG, GIF, WebP, HEIF, HEIC) |
+| `intensity` | String | medium | Detection level: `low`, `medium`, `high` |
+| `threshold` | Float | - | Override threshold (0.0-1.0) |
+| `return_details` | Boolean | false | Include all category scores |
+
+---
+
+### 👤 Blur Faces
+```bash
+POST /faces/blur
+```
+
+**Request:**
+```bash
+curl -X POST http://localhost:8000/faces/blur \
+  -H "X-API-Key: test-key-1" \
+  -F "file=@image.jpg" \
+  -F "intensity=high"
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Successfully blurred 3 face(s)",
+  "faces_detected": 3,
+  "processed_image_base64": "iVBORw0KGgoAAAA..."
+}
+```
+
+**Parameters:**
+| Name | Type | Default | Description |
+|------|------|---------|-------------|
+| `file` | File | required | Image file |
+| `intensity` | String | medium | Blur level: `low`, `medium`, `high` |
+| `blur_strength` | Integer | - | Kernel size (1-50, must be odd) |
+| `confidence_threshold` | Float | - | Detection sensitivity (0.0-1.0) |
+
+---
+
+## 🐳 Docker Deployment
+
+### Using Docker Compose
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+services:
+  api:
+    image: christopherloes/image-moderation-api:latest
+    ports:
+      - "8000:8000"
+    environment:
+      API_KEYS: "your-secret-key-1,your-secret-key-2"
+      FACE_DETECTION_INTENSITY: "high"
+      NSFW_DETECTION_INTENSITY: "medium"
+    volumes:
+      - ./models:/app/models
+      - ./logs:/app/logs
+    restart: unless-stopped
+```
+
+**Start:**
+```bash
 docker-compose up -d
 ```
 
@@ -79,297 +230,305 @@ docker-compose up -d
 
 ```bash
 docker run -d \
-  --name mediapipe-nsfw-api \
+  --name image-moderation \
   -p 8000:8000 \
-  -e API_KEYS="your-api-key-1,your-api-key-2" \
-  -e NSFW_THRESHOLD=0.6 \
-  -e FACE_BLUR_STRENGTH=25 \
-  mediapipe-nsfw-api:latest
+  -e API_KEYS="your-secret-key" \
+  -e FACE_DETECTION_INTENSITY=high \
+  -e NSFW_DETECTION_INTENSITY=medium \
+  -v ./models:/app/models \
+  -v ./logs:/app/logs \
+  christopherloes/image-moderation-api:latest
 ```
 
-Access Swagger UI: `http://localhost:8000/docs`
+### Building Locally
 
-## Configuration
+```bash
+docker build -t image-moderation-api:latest .
+docker run -p 8000:8000 -e API_KEYS="test" image-moderation-api:latest
+```
 
-All settings can be configured via environment variables:
+---
 
+## ⚙️ Configuration
+
+All settings via environment variables (`.env` or Docker):
+
+### API & Security
 ```env
-# API Authentication
-API_KEYS=key1,key2,key3
-
-# Face Detection
-FACE_BLUR_STRENGTH=25           # Blur kernel size (1-50)
-FACE_DETECTION_CONFIDENCE=0.5   # Detection threshold (0.0-1.0)
-
-# NSFW Detection
-NSFW_THRESHOLD=0.6              # Classification threshold (0.0-1.0)
-
-# Image Limits
-MAX_FILE_SIZE=8388608           # 8 MB in bytes
-MAX_IMAGE_WIDTH=4000
-MAX_IMAGE_HEIGHT=4000
-
-# Server
-HOST=0.0.0.0
-PORT=8000
-LOG_LEVEL=info
+API_KEYS=key1,key2,key3           # Comma-separated API keys
+LOG_LEVEL=info                    # debug, info, warning, error
 ```
 
-**Runtime Parameter Override**: You can override defaults per request:
-- Blur endpoint: `blur_strength`, `confidence_threshold` query params
-- NSFW endpoint: `threshold`, `return_details` query params
+### Face Detection
+```env
+FACE_DETECTION_INTENSITY=medium   # low, medium, high
+FACE_DETECTION_CONFIDENCE=0.5     # 0.0-1.0 (ignored if intensity set)
+FACE_BLUR_STRENGTH=25             # 1-50, must be odd
+```
 
-## API Endpoints
+### NSFW Detection
+```env
+NSFW_DETECTION_INTENSITY=medium   # low, medium, high
+NSFW_THRESHOLD=0.6                # 0.0-1.0 (ignored if intensity set)
+```
 
-### Health Check
+### Image Constraints
+```env
+MAX_FILE_SIZE=8388608             # 8 MB default
+MAX_IMAGE_WIDTH=4000              # pixels
+MAX_IMAGE_HEIGHT=4000             # pixels
+```
+
+### Intensity Levels
+
+**Face Detection:**
+| Level | Confidence | Blur | Use Case |
+|-------|-----------|------|----------|
+| low | 0.3 | 11px | Minimal privacy |
+| medium | 0.5 | 25px | Balanced (recommended) |
+| high | 0.8 | 41px | Maximum privacy |
+
+**NSFW Detection:**
+| Level | Threshold | Use Case |
+|-------|-----------|----------|
+| low | 0.8 | Lenient (user content) |
+| medium | 0.6 | Balanced (recommended) |
+| high | 0.4 | Strict (compliance) |
+
+---
+
+## 📚 Documentation
+
+### Interactive API Docs
+
+**Swagger UI (Try It Out):**
+```
+http://localhost:8000/docs
+```
+
+**ReDoc (Beautiful Docs):**
+```
+http://localhost:8000/redoc
+```
+
+**OpenAPI Schema:**
+```
+http://localhost:8000/openapi.json
+```
+
+### Complete Documentation
+
+See [.github/WORKFLOWS.md](.github/WORKFLOWS.md) for CI/CD pipeline details.
+See [CI_CD_SETUP.md](CI_CD_SETUP.md) for GitHub Actions setup.
+
+---
+
+## 🔄 CI/CD Pipeline
+
+This project includes a **production-ready GitHub Actions CI/CD pipeline**:
+
+### Automated Workflows
+- ✅ **Unit Tests** - Python 3.10/3.11/3.12
+- ✅ **Docker Build Tests** - Container health checks
+- ✅ **Security Scanning** - Trivy vulnerability scan
+- ✅ **Dependency Updates** - Automated with Dependabot
+- ✅ **Auto-Fix** - Automatic fixes for common issues
+- ✅ **AI Diagnostics** - Claude AI problem analysis
+- ✅ **Docker Hub Push** - Automatic image publishing
+
+### Getting Started with CI/CD
+1. Fork repository
+2. Add GitHub Secrets:
+   - `DOCKERHUB_USERNAME`
+   - `DOCKERHUB_TOKEN`
+   - `ANTHROPIC_API_KEY` (optional, for AI diagnostics)
+3. Push to main → Automated build & publish
+
+See [CI_CD_SETUP.md](CI_CD_SETUP.md) for complete setup guide.
+
+---
+
+## 🔧 Environment Setup
+
+### 1. Clone Repository
 ```bash
-curl http://localhost:8000/health
+git clone https://github.com/ChrisLoes/image-moderation-api.git
+cd image-moderation-api
 ```
 
-### Blur Faces
-
-**Endpoint**: `POST /faces/blur`
-
-```bash
-curl -X POST http://localhost:8000/faces/blur \
-  -H "X-API-Key: your-api-key" \
-  -F "file=@image.jpg" \
-  -F "blur_strength=25" \
-  -F "confidence_threshold=0.5"
-```
-
-**Response**:
-```json
-{
-  "success": true,
-  "message": "Successfully processed image and blurred 3 face(s)",
-  "faces_detected": 3,
-  "processed_image_base64": "..."
-}
-```
-
-### Check NSFW Content
-
-**Endpoint**: `POST /nsfw/check`
-
-```bash
-curl -X POST http://localhost:8000/nsfw/check \
-  -H "X-API-Key: your-api-key" \
-  -F "file=@image.jpg" \
-  -F "threshold=0.6" \
-  -F "return_details=true"
-```
-
-**Response**:
-```json
-{
-  "success": true,
-  "is_nsfw": false,
-  "confidence": 0.12,
-  "primary_detection": "safe",
-  "detections": {
-    "safe": 0.88,
-    "partially_nude": 0.08,
-    "nude": 0.04
-  }
-}
-```
-
-## Plesk Server Deployment
-
-### Prerequisites
-- Plesk with Docker extension installed
-- SSH access to server
-- Domain name or IP address
-
-### Step 1: Prepare Image for Plesk
-
-```bash
-# Build image locally or on server
-docker build -t mediapipe-nsfw-api:latest .
-
-# Tag for registry (if using private registry)
-docker tag mediapipe-nsfw-api:latest your-registry/mediapipe-nsfw-api:latest
-docker push your-registry/mediapipe-nsfw-api:latest
-```
-
-### Step 2: Push to Registry (Optional)
-
-For easier management, push to Docker Hub or private registry:
-
-```bash
-docker login
-docker tag mediapipe-nsfw-api:latest yourusername/mediapipe-nsfw-api:latest
-docker push yourusername/mediapipe-nsfw-api:latest
-```
-
-### Step 3: Deploy via Plesk
-
-**Option A: Using Plesk UI**
-
-1. Go to **Plesk Dashboard** → **Containers** (if available)
-2. Click **Create Container**
-3. Image: `yourusername/mediapipe-nsfw-api:latest`
-4. Port mapping: `8000 → 8000`
-5. Environment variables (add from `.env`):
-   - `API_KEYS=your-key-1,your-key-2`
-   - `NSFW_THRESHOLD=0.6`
-   - etc.
-6. Memory limit: 2-4 GB recommended
-7. Click **Create**
-
-**Option B: SSH Deployment**
-
-```bash
-ssh root@your-plesk-server
-
-# SSH into server
-cd /var/www/your-domain
-
-# Create docker-compose.yml
-cat > docker-compose.yml << 'EOF'
-version: '3.8'
-services:
-  api:
-    image: yourusername/mediapipe-nsfw-api:latest
-    container_name: mediapipe-nsfw-api
-    restart: unless-stopped
-    ports:
-      - "8000:8000"
-    environment:
-      - API_KEYS=your-key-1,your-key-2
-      - NSFW_THRESHOLD=0.6
-      - FACE_BLUR_STRENGTH=25
-    volumes:
-      - ./logs:/app/logs
-    deploy:
-      resources:
-        limits:
-          memory: 3G
-        reservations:
-          memory: 2G
-EOF
-
-# Start container
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-```
-
-### Step 4: Setup Reverse Proxy (Nginx in Plesk)
-
-In **Plesk Dashboard**:
-
-1. **Domains** → your domain
-2. **Hosting Settings** → **Apache & Nginx**
-3. Add Nginx rule:
-
-```nginx
-location / {
-    proxy_pass http://localhost:8000;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_read_timeout 300s;
-    proxy_connect_timeout 75s;
-}
-```
-
-Now API is accessible at: `https://your-domain.com`
-
-### Step 5: SSL Certificate (Optional but Recommended)
-
-1. **Domains** → your domain
-2. **SSL/TLS Certificates**
-3. Use Let's Encrypt or upload existing certificate
-
-### Monitoring & Logs
-
-```bash
-# SSH into server
-docker logs -f mediapipe-nsfw-api
-
-# View container stats
-docker stats mediapipe-nsfw-api
-
-# Restart container
-docker restart mediapipe-nsfw-api
-
-# Check health
-curl https://your-domain.com/health
-```
-
-## NudeNet v3 Model Setup
-
-The NSFW detection requires the NudeNet v3 ONNX model:
-
-1. Download from: https://github.com/notAI-tech/NudeNet/releases/tag/v3
-2. Place `classifier_nsfw.onnx` in `models/` directory
-
+### 2. Install NudeNet Model
 ```bash
 mkdir -p models
-# Download and extract
 curl -L https://github.com/notAI-tech/NudeNet/releases/download/v3/classifier_nsfw.onnx \
   -o models/classifier_nsfw.onnx
 ```
 
-For Docker: The model should be included in the image or mounted as volume:
-
-```yaml
-volumes:
-  - ./models:/app/models
+### 3. Configure Environment
+```bash
+cp .env.example .env
+# Edit .env with your settings
+nano .env
 ```
 
-## Error Handling
+### 4. Start Service
+```bash
+# Option A: Docker Compose
+docker-compose up -d
 
-| Code | Reason |
-|------|--------|
-| 400 | Invalid image format or dimensions |
-| 401 | Missing/invalid API key |
-| 413 | File too large (exceeds 8 MB) |
-| 503 | NSFW model not loaded |
+# Option B: Local Python
+python -m uvicorn app.main:app --reload
 
-## Performance Tips
+# Option C: Using Gunicorn (Production)
+gunicorn -w 4 -b 0.0.0.0:8000 app.main:app
+```
 
-- **GPU Support**: ONNX Runtime supports GPU acceleration. Ensure CUDA/TensorRT installed.
-- **Memory**: Allocate 2-4 GB RAM for optimal performance
-- **Caching**: Consider frontend caching for repeated images
-- **Batch Processing**: Current API handles single images; batch endpoint can be added if needed
+---
 
-## Roadmap
+## 📊 Logging
 
-- [ ] Batch image processing endpoint
+### Log Files
+```
+logs/
+├── api.log       # All requests and operations
+└── error.log     # Errors only
+```
+
+### View Logs
+```bash
+# Docker Compose
+docker-compose logs -f api
+
+# Docker
+docker logs -f image-moderation
+
+# Local
+tail -f logs/api.log
+```
+
+### Log Levels
+```bash
+# Development
+export LOG_LEVEL=debug
+
+# Production
+export LOG_LEVEL=info
+```
+
+---
+
+## 🚀 Performance & Scaling
+
+### System Requirements
+| Component | Minimum | Recommended |
+|-----------|---------|-------------|
+| CPU | 2 cores | 4+ cores |
+| RAM | 2 GB | 4 GB |
+| Disk | 1 GB | 5 GB |
+| GPU | Optional | NVIDIA GPU (CUDA) |
+
+### Performance Tips
+- **GPU Support**: Enable CUDA/TensorRT for faster inference
+- **Caching**: Cache results for identical images
+- **Batch Processing**: Process multiple images in parallel
+- **Load Balancing**: Run multiple containers behind load balancer
+
+### Typical Performance
+- Face Detection: ~200-500ms per image
+- NSFW Detection: ~300-800ms per image
+- Combined: ~500-1000ms per image
+
+*Times vary based on image size, GPU availability, and system load*
+
+---
+
+## 🤝 Contributing
+
+Contributions welcome! 
+
+1. Fork the repository
+2. Create feature branch: `git checkout -b feature/amazing-feature`
+3. Commit changes: `git commit -m 'Add amazing feature'`
+4. Push to branch: `git push origin feature/amazing-feature`
+5. Open Pull Request
+
+### Development Setup
+```bash
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+pytest tests/ -v
+```
+
+---
+
+## 📋 Roadmap
+
+- [ ] Batch processing endpoint
 - [ ] WebSocket support for streaming
-- [ ] Admin dashboard for stats/monitoring
-- [ ] Custom model upload support
-- [ ] Image redaction (mosaic, pixelate alternatives)
+- [ ] Admin dashboard
+- [ ] Custom model upload
+- [ ] Alternative redaction modes (mosaic, pixelate)
+- [ ] Redis caching layer
+- [ ] Prometheus metrics export
+- [ ] Multi-language support
 
-## Troubleshooting
+---
 
-### NSFW Model Not Loading
+## 🐛 Troubleshooting
+
+### Model Not Found
 ```
 Error: models/classifier_nsfw.onnx not found
 ```
-**Solution**: Download model and place in `models/` directory
+**Solution:** Download NudeNet model to `models/` directory
 
 ### Out of Memory
 ```
-docker: memory limit exceeded
+Error: memory limit exceeded
 ```
-**Solution**: Increase Docker memory allocation or process images sequentially
+**Solution:** Increase Docker memory or process images sequentially
 
-### Slow Inference
+### API Key Issues
 ```
-Takes >5s per image
+Error: 401 Unauthorized
 ```
-**Solution**: Enable GPU support with TensorRT, or reduce image dimensions
+**Solution:** Check `X-API-Key` header and verify key in environment
 
-## License
+### Slow Processing
+```
+Request takes >10 seconds
+```
+**Solution:** Enable GPU support, reduce image size, or check system load
 
-MIT
+---
 
-## Support
+## 📄 License
 
-For issues, feature requests, or contributions, please open an issue on GitHub.
+MIT License - see [LICENSE](LICENSE) file for details
+
+---
+
+## 🙋 Support & Contact
+
+- **Issues:** [GitHub Issues](https://github.com/ChrisLoes/image-moderation-api/issues)
+- **Discussions:** [GitHub Discussions](https://github.com/ChrisLoes/image-moderation-api/discussions)
+- **Email:** steffen.loeslein@googlemail.com
+
+---
+
+## 🙏 Acknowledgments
+
+- [MediaPipe](https://mediapipe.dev/) - Face detection
+- [NudeNet](https://github.com/notAI-tech/NudeNet) - NSFW classification
+- [FastAPI](https://fastapi.tiangolo.com/) - Web framework
+- [ONNX Runtime](https://onnxruntime.ai/) - Model inference
+
+---
+
+<div align="center">
+
+Made with ❤️ by [Chris Loes](https://github.com/ChrisLoes)
+
+⭐ If you find this project useful, please consider giving it a star!
+
+</div>
