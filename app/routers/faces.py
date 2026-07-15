@@ -19,6 +19,7 @@ def get_face_detector(confidence: float | None = None):
     """Get face detector with specified confidence threshold."""
     threshold = confidence or settings.face_detection_confidence
     return mp_face_detection.FaceDetection(
+        static_image_mode=True,  # Essential for static images - enables face tracking across frames
         model_selection=0,  # 0=short-range (efficient, <2m), 1=full-range (slower, up to 5m)
         min_detection_confidence=threshold
     )
