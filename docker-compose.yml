@@ -3,7 +3,7 @@ version: '3.8'
 services:
   api:
     build: .
-    container_name: mediapipe-nsfw-api
+    container_name: image-moderation-api
     ports:
       - "8000:8000"
     environment:
