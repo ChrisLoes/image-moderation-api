@@ -129,7 +129,7 @@ async def blur_faces(
 
             # Apply blur to face region
             face_region = cv_image[y_min:y_max, x_min:x_max]
-            blurred = cv2.blur(face_region, (blur_k, blur_k))
+            blurred = cv2.GaussianBlur(face_region, (blur_k, blur_k), 0)
             cv_image[y_min:y_max, x_min:x_max] = blurred
 
             faces_detected += 1
