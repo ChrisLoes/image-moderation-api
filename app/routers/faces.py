@@ -18,11 +18,19 @@ mp_face_detection = mp.solutions.face_detection
 def get_face_detector(confidence: float | None = None):
     """Get face detector with specified confidence threshold."""
     threshold = confidence or settings.face_detection_confidence
-    return mp_face_detection.FaceDetection(
-        static_image_mode=True,  # Essential for static images - enables face tracking across frames
-        model_selection=0,  # 0=short-range (efficient, <2m), 1=full-range (slower, up to 5m)
-        min_detection_confidence=threshold
-    )
+    try:
+        # Try newer MediaPipe API (without static_image_mode)
+        return mp_face_detection.FaceDetection(
+            model_selection=0,  # 0=short-range (efficient, <2m), 1=full-range (slower, up to 5m)
+            min_detection_confidence=threshold
+        )
+    except TypeError:
+        # Fallback for older MediaPipe API (with static_image_mode)
+        return mp_face_detection.FaceDetection(
+            static_image_mode=True,  # Essential for static images - enables face tracking across frames
+            model_selection=0,
+            min_detection_confidence=threshold
+        )
 
 
 def apply_gaussian_blur(face_region: np.ndarray, blur_k: int) -> np.ndarray:
