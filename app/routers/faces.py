@@ -25,6 +25,37 @@ def get_face_detector(confidence: float | None = None):
     )
 
 
+def apply_gaussian_blur(face_region: np.ndarray, blur_k: int) -> np.ndarray:
+    """Apply Gaussian blur to face region."""
+    return cv2.GaussianBlur(face_region, (blur_k, blur_k), 0)
+
+
+def apply_pixelation(face_region: np.ndarray, pixel_size: int) -> np.ndarray:
+    """Apply pixelation/pixelate blur to face region."""
+    # Ensure pixel_size is at least 1
+    pixel_size = max(1, pixel_size)
+
+    # Resize down to reduce resolution
+    h, w = face_region.shape[:2]
+    small_h = max(1, h // pixel_size)
+    small_w = max(1, w // pixel_size)
+
+    # Resize down then up to create pixelation effect
+    small = cv2.resize(face_region, (small_w, small_h), interpolation=cv2.INTER_LINEAR)
+    pixelated = cv2.resize(small, (w, h), interpolation=cv2.INTER_NEAREST)
+
+    return pixelated
+
+
+def apply_hybrid_blur(face_region: np.ndarray, blur_k: int, pixel_size: int = 5) -> np.ndarray:
+    """Apply hybrid blur: combination of pixelation and Gaussian blur."""
+    # First pixelate
+    pixelated = apply_pixelation(face_region, pixel_size)
+    # Then apply light Gaussian blur
+    hybrid = cv2.GaussianBlur(pixelated, (blur_k // 2, blur_k // 2), 0) if blur_k > 2 else pixelated
+    return hybrid
+
+
 @router.post(
     "/blur",
     response_model=BlurFacesResponse,
@@ -59,6 +90,7 @@ async def blur_faces(
     blur_strength: Optional[int] = None,
     confidence_threshold: Optional[float] = None,
     face_padding: Optional[int] = None,
+    blur_method: Optional[str] = None,
     api_key: str = Depends(verify_api_key),
 ) -> BlurFacesResponse:
     """
@@ -67,11 +99,11 @@ async def blur_faces(
     ## How It Works
     1. Receives image file and configuration parameters
     2. Uses MediaPipe face detection to locate faces
-    3. Applies Gaussian blur to detected face regions
+    3. Applies blur to detected face regions (Gaussian, Pixelate, or Hybrid)
     4. Returns blurred image as base64-encoded PNG
 
     ## Parameter Priority (highest to lowest)
-    1. Explicit parameters (`blur_strength`, `confidence_threshold`, `face_padding`)
+    1. Explicit parameters (`blur_strength`, `confidence_threshold`, `face_padding`, `blur_method`)
     2. `intensity` level (low/medium/high)
     3. Environment/config defaults
 
@@ -80,13 +112,19 @@ async def blur_faces(
     - **medium**: Confidence=0.5, Blur=25px (balanced, recommended)
     - **high**: Confidence=0.8, Blur=41px (aggressive, all possible faces)
 
+    ## Blur Methods
+    - **gaussian**: Smooth Gaussian blur (default, natural looking)
+    - **pixelate**: Pixelated/verpixelt effect (strong privacy, blocky)
+    - **hybrid**: Combination of pixelation + light Gaussian blur (balanced)
+
     ## Examples
     - Basic: `POST /faces/blur -F "file=@image.jpg"`
     - High intensity: `POST /faces/blur -F "file=@image.jpg" -F "intensity=high"`
-    - Custom blur: `POST /faces/blur -F "file=@image.jpg" -F "blur_strength=35" -F "confidence_threshold=0.7"`
+    - Strong pixelation: `POST /faces/blur -F "file=@image.jpg" -F "blur_strength=150" -F "blur_method=pixelate"`
+    - Custom blur: `POST /faces/blur -F "file=@image.jpg" -F "blur_strength=35" -F "blur_method=gaussian"`
     - With padding: `POST /faces/blur -F "file=@image.jpg" -F "blur_strength=25" -F "face_padding=20"`
     """
-    logger.debug(f"Face blur request - intensity: {intensity}, blur_strength: {blur_strength}, face_padding: {face_padding}")
+    logger.debug(f"Face blur request - intensity: {intensity}, blur_strength: {blur_strength}, face_padding: {face_padding}, blur_method: {blur_method}")
 
     # Validate image
     pil_image = await validate_image(file)
@@ -113,6 +151,18 @@ async def blur_faces(
     else:
         padding = settings.face_blur_padding
 
+    # Get blur method - priority: direct param > config
+    if blur_method is not None:
+        blur_method_used = blur_method.lower()
+    else:
+        blur_method_used = settings.face_blur_method.lower()
+
+    # Validate blur method
+    valid_methods = ['gaussian', 'pixelate', 'hybrid']
+    if blur_method_used not in valid_methods:
+        blur_method_used = 'gaussian'
+        logger.warning(f"Invalid blur method '{blur_method}', using 'gaussian'")
+
     # Get detection confidence - priority: direct param > intensity > config
     if confidence_threshold is not None:
         detect_confidence = confidence_threshold
@@ -137,7 +187,14 @@ async def blur_faces(
 
             # Apply blur to face region
             face_region = cv_image[y_min:y_max, x_min:x_max]
-            blurred = cv2.GaussianBlur(face_region, (blur_k, blur_k), 0)
+
+            if blur_method_used == 'pixelate':
+                blurred = apply_pixelation(face_region, blur_k // 4)
+            elif blur_method_used == 'hybrid':
+                blurred = apply_hybrid_blur(face_region, blur_k)
+            else:  # gaussian (default)
+                blurred = apply_gaussian_blur(face_region, blur_k)
+
             cv_image[y_min:y_max, x_min:x_max] = blurred
 
             faces_detected += 1
@@ -157,7 +214,8 @@ async def blur_faces(
 
     logger.info(
         f"Face blur completed - detected: {faces_detected}, "
-        f"blur_strength: {blur_k}, confidence: {detect_confidence}, padding: {padding}"
+        f"blur_strength: {blur_k}, confidence: {detect_confidence}, padding: {padding}, "
+        f"method: {blur_method_used}"
     )
 
     return response
