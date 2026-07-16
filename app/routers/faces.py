@@ -64,6 +64,36 @@ def apply_hybrid_blur(face_region: np.ndarray, blur_k: int, pixel_size: int = 5)
     return hybrid
 
 
+def apply_oval_mask(face_region: np.ndarray, blurred_region: np.ndarray) -> np.ndarray:
+    """Apply oval mask to blend blurred region with original."""
+    h, w = face_region.shape[:2]
+
+    # Create oval mask
+    mask = np.zeros((h, w), dtype=np.uint8)
+    # Oval is slightly smaller than region to create smooth transition
+    center_x, center_y = w // 2, h // 2
+    # Axes adjusted to create natural face oval (slightly wider at top)
+    axes_x = int(w * 0.45)
+    axes_y = int(h * 0.48)
+
+    cv2.ellipse(mask, (center_x, center_y), (axes_x, axes_y), 0, 0, 360, 255, -1)
+
+    # Apply Gaussian blur to mask edges for smooth transition
+    mask = cv2.GaussianBlur(mask, (21, 21), 0)
+
+    # Blend using mask
+    mask_norm = mask.astype(float) / 255.0
+
+    # Handle both 3-channel (color) and 2-channel images
+    if len(face_region.shape) == 3:
+        mask_norm = np.dstack([mask_norm] * 3)
+
+    result = (blurred_region.astype(float) * mask_norm +
+              face_region.astype(float) * (1 - mask_norm)).astype(np.uint8)
+
+    return result
+
+
 @router.post(
     "/blur",
     response_model=BlurFacesResponse,
@@ -205,6 +235,9 @@ async def blur_faces(
                 blurred = apply_hybrid_blur(face_region, blur_k)
             else:  # gaussian (default)
                 blurred = apply_gaussian_blur(face_region, blur_k)
+
+            # Apply oval mask to blend blurred region with original
+            blurred = apply_oval_mask(face_region, blurred)
 
             cv_image[y_min:y_max, x_min:x_max] = blurred
 
