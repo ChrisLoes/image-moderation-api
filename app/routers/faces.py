@@ -18,17 +18,19 @@ mp_face_detection = mp.solutions.face_detection
 def get_face_detector(confidence: float | None = None):
     """Get face detector with specified confidence threshold."""
     threshold = confidence or settings.face_detection_confidence
+    # Use model_selection=1 (full-range) for better detection of all faces
+    # including those further away (up to 5m). model_selection=0 is short-range (<2m)
     try:
         # Try newer MediaPipe API (without static_image_mode)
         return mp_face_detection.FaceDetection(
-            model_selection=0,  # 0=short-range (efficient, <2m), 1=full-range (slower, up to 5m)
+            model_selection=1,  # 1=full-range (detects faces up to 5m away)
             min_detection_confidence=threshold
         )
     except TypeError:
         # Fallback for older MediaPipe API (with static_image_mode)
         return mp_face_detection.FaceDetection(
-            static_image_mode=True,  # Essential for static images - enables face tracking across frames
-            model_selection=0,
+            static_image_mode=True,  # Essential for static images
+            model_selection=1,  # Full-range detection
             min_detection_confidence=threshold
         )
 
