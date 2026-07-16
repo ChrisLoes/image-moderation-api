@@ -189,7 +189,10 @@ async def blur_faces(
             face_region = cv_image[y_min:y_max, x_min:x_max]
 
             if blur_method_used == 'pixelate':
-                blurred = apply_pixelation(face_region, blur_k // 4)
+                # For pixelation: blur_strength maps to pixel_size (3-20 optimal)
+                # 10->3, 50->5, 100->8, 150->12, 200->15
+                pixel_size = max(2, min(20, blur_k // 15))
+                blurred = apply_pixelation(face_region, pixel_size)
             elif blur_method_used == 'hybrid':
                 blurred = apply_hybrid_blur(face_region, blur_k)
             else:  # gaussian (default)
