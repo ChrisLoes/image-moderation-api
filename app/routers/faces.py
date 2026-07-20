@@ -61,8 +61,14 @@ def apply_hybrid_blur(face_region: np.ndarray, blur_k: int, pixel_size: int = 5)
     """Apply hybrid blur: combination of pixelation and Gaussian blur."""
     # First pixelate
     pixelated = apply_pixelation(face_region, pixel_size)
-    # Then apply light Gaussian blur
-    hybrid = cv2.GaussianBlur(pixelated, (blur_k // 2, blur_k // 2), 0) if blur_k > 2 else pixelated
+    # Then apply light Gaussian blur - kernel size must be odd for OpenCV
+    if blur_k > 2:
+        kernel_size = blur_k // 2
+        if kernel_size % 2 == 0:
+            kernel_size += 1
+        hybrid = cv2.GaussianBlur(pixelated, (kernel_size, kernel_size), 0)
+    else:
+        hybrid = pixelated
     return hybrid
 
 
