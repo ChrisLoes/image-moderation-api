@@ -9,6 +9,7 @@ import os
 import sys
 import json
 import socket
+import shutil
 import subprocess
 import urllib.request
 import urllib.error
@@ -62,20 +63,13 @@ def download_model(url):
             }
         )
 
-        # Download with progress and timeout
-        def download_progress(block_num, block_size, total_size):
-            if total_size > 0:
-                downloaded = block_num * block_size
-                percent = min(downloaded * 100 // total_size, 100)
-                mb_downloaded = downloaded / (1024 * 1024)
-                mb_total = total_size / (1024 * 1024)
-                print(f"\rProgress: {percent}% ({mb_downloaded:.1f}/{mb_total:.1f} MB)", end="", flush=True)
-
         # Set global timeout to 10 minutes for large downloads
         old_timeout = socket.getdefaulttimeout()
         try:
             socket.setdefaulttimeout(600)
-            urllib.request.urlretrieve(request, model_path, download_progress)
+            with urllib.request.urlopen(request) as response:
+                with open(model_path, 'wb') as out_file:
+                    shutil.copyfileobj(response, out_file)
             print("\nDownload complete!")
         finally:
             socket.setdefaulttimeout(old_timeout)

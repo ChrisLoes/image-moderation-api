@@ -7,6 +7,7 @@ Supports both short-range and full-range models.
 import os
 import sys
 import socket
+import shutil
 import subprocess
 import urllib.request
 import urllib.error
@@ -68,7 +69,9 @@ def download_model(model_name, model_info):
         old_timeout = socket.getdefaulttimeout()
         try:
             socket.setdefaulttimeout(600)
-            urllib.request.urlretrieve(request, model_path, download_progress)
+            with urllib.request.urlopen(request) as response:
+                with open(model_path, 'wb') as out_file:
+                    shutil.copyfileobj(response, out_file)
             print()
         finally:
             socket.setdefaulttimeout(old_timeout)
