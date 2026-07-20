@@ -65,8 +65,7 @@ class NSFWCheckRequest(BaseModel):
         description="Detection intensity level. Sets the classification threshold. "
         "'low': only obvious NSFW, 'medium': balanced, 'high': aggressive. "
         "Overridden by explicit threshold parameter.",
-        enum=["low", "medium", "high"],
-        example="medium",
+        json_schema_extra={"enum": ["low", "medium", "high"], "example": "medium"},
     )
     return_details: Optional[bool] = Field(
         default=False,
