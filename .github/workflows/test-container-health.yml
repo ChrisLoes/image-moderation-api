@@ -1,0 +1,69 @@
+name: Test Container Health Before Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  test-container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          load: true
+          tags: test-image:latest
+
+      - name: Run container
+        run: |
+          docker run -d --name test-container -p 8000:8000 test-image:latest
+          echo "Container started, waiting for models to download..."
+          sleep 15
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Install test dependencies
+        run: |
+          pip install requests
+
+      - name: Run health checks
+        run: |
+          python scripts/test_container_health.py
+        continue-on-error: false
+
+      - name: Get container logs on failure
+        if: failure()
+        run: |
+          echo "=== CONTAINER LOGS ==="
+          docker logs test-container | tail -200
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker stop test-container || true
+          docker rm test-container || true
+
+      - name: Test Summary
+        if: always()
+        run: |
+          echo "## Container Health Test Summary" >> $GITHUB_STEP_SUMMARY
+          if [ ${{ job.status }} == 'success' ]; then
+            echo "✅ Container is healthy and ready for release" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Container failed health checks" >> $GITHUB_STEP_SUMMARY
+          fi
