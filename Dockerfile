@@ -18,9 +18,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application and entrypoint
 COPY app/ ./app/
 COPY entrypoint.sh .
+COPY scripts/download_nsfw_model.py ./scripts/
 
-# Make entrypoint executable and create logs directory
-RUN chmod +x entrypoint.sh && mkdir -p logs
+# Make entrypoint executable, create logs and models directories
+RUN chmod +x entrypoint.sh && mkdir -p logs models
+
+# Download latest NSFW model before creating non-root user
+RUN python scripts/download_nsfw_model.py
 
 # Create non-root user for security
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
