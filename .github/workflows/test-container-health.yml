@@ -1,9 +1,6 @@
 name: Test Container Health Before Release
 
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
 
 jobs:
