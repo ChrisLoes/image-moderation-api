@@ -4,13 +4,17 @@ set -e
 echo "=== MediaPipe NSFW Detection API ==="
 echo "Starting application..."
 
+# Set MediaPipe cache directory to use pre-downloaded models
+export MEDIAPIPE_HOME=/app/models/mediapipe
+mkdir -p "$MEDIAPIPE_HOME"
+
 # Install/update dependencies if required
 if [ ! -d "venv" ] && [ "$INSTALL_DEPS" != "false" ]; then
     echo "Installing Python dependencies..."
     pip install --no-cache-dir -r requirements.txt
 fi
 
-# Check for required files and download if missing
+# Check for NSFW model and download if missing
 if [ ! -f "models/classifier_nsfw.onnx" ]; then
     echo "WARNING: NSFW model not found at models/classifier_nsfw.onnx"
     echo "Attempting to download latest model..."
@@ -18,14 +22,26 @@ if [ ! -f "models/classifier_nsfw.onnx" ]; then
     if [ -f "scripts/download_nsfw_model.py" ]; then
         python scripts/download_nsfw_model.py
         if [ -f "models/classifier_nsfw.onnx" ]; then
-            echo "Model downloaded successfully at runtime!"
+            echo "NSFW model downloaded successfully at runtime!"
         else
             echo "ERROR: Failed to download NSFW model at runtime"
             echo "Download manually from: https://github.com/notAI-tech/NudeNet/releases/tag/v3"
         fi
-    else
-        echo "ERROR: Download script not found"
-        echo "Download manually from: https://github.com/notAI-tech/NudeNet/releases/tag/v3"
+    fi
+fi
+
+# Check for MediaPipe models and download if missing
+if [ ! -f "models/mediapipe/face_detection_full_range.tflite" ]; then
+    echo "WARNING: MediaPipe face detection model not found"
+    echo "Attempting to download latest model..."
+
+    if [ -f "scripts/download_mediapipe_models.py" ]; then
+        python scripts/download_mediapipe_models.py
+        if [ -f "models/mediapipe/face_detection_full_range.tflite" ]; then
+            echo "MediaPipe models downloaded successfully at runtime!"
+        else
+            echo "WARNING: Could not download MediaPipe models, using automatic download at startup"
+        fi
     fi
 fi
 
