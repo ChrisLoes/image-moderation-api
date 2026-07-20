@@ -10,11 +10,23 @@ if [ ! -d "venv" ] && [ "$INSTALL_DEPS" != "false" ]; then
     pip install --no-cache-dir -r requirements.txt
 fi
 
-# Check for required files
+# Check for required files and download if missing
 if [ ! -f "models/classifier_nsfw.onnx" ]; then
     echo "WARNING: NSFW model not found at models/classifier_nsfw.onnx"
-    echo "NSFW detection will not be available until model is downloaded"
-    echo "Download from: https://github.com/notAI-tech/NudeNet/releases/tag/v3"
+    echo "Attempting to download latest model..."
+
+    if [ -f "scripts/download_nsfw_model.py" ]; then
+        python scripts/download_nsfw_model.py
+        if [ -f "models/classifier_nsfw.onnx" ]; then
+            echo "Model downloaded successfully at runtime!"
+        else
+            echo "ERROR: Failed to download NSFW model at runtime"
+            echo "Download manually from: https://github.com/notAI-tech/NudeNet/releases/tag/v3"
+        fi
+    else
+        echo "ERROR: Download script not found"
+        echo "Download manually from: https://github.com/notAI-tech/NudeNet/releases/tag/v3"
+    fi
 fi
 
 # Log configuration
