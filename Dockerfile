@@ -25,8 +25,14 @@ COPY scripts/download_mediapipe_models.py ./scripts/
 RUN chmod +x entrypoint.sh && mkdir -p logs models/mediapipe
 
 # Download latest models before creating non-root user
-RUN echo "Downloading NSFW model..." && python scripts/download_nsfw_model.py
-RUN echo "Downloading MediaPipe models..." && python scripts/download_mediapipe_models.py
+# These downloads are optional - if they fail, models will be downloaded at runtime
+RUN echo "Downloading NSFW model..." && \
+    timeout 300 python scripts/download_nsfw_model.py || \
+    echo "⚠️  NSFW model download skipped (will download at runtime)"
+
+RUN echo "Downloading MediaPipe models..." && \
+    timeout 300 python scripts/download_mediapipe_models.py || \
+    echo "⚠️  MediaPipe model download skipped (will download at runtime)"
 
 # Create non-root user for security
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
