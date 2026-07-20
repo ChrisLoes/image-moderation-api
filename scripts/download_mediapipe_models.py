@@ -6,6 +6,7 @@ Supports both short-range and full-range models.
 
 import os
 import sys
+import socket
 import subprocess
 import urllib.request
 import urllib.error
@@ -64,8 +65,13 @@ def download_model(model_name, model_info):
             headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
         )
         # Set timeout to 10 minutes for large downloads
-        urllib.request.urlretrieve(request, model_path, download_progress, timeout=600)
-        print()
+        old_timeout = socket.getdefaulttimeout()
+        try:
+            socket.setdefaulttimeout(600)
+            urllib.request.urlretrieve(request, model_path, download_progress)
+            print()
+        finally:
+            socket.setdefaulttimeout(old_timeout)
 
         # Verify file
         if model_path.exists() and model_path.stat().st_size > 100000:  # At least 100KB

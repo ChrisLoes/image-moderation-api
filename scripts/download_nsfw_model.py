@@ -8,6 +8,7 @@ Supports multiple download methods: urllib, curl, or wget.
 import os
 import sys
 import json
+import socket
 import subprocess
 import urllib.request
 import urllib.error
@@ -70,9 +71,14 @@ def download_model(url):
                 mb_total = total_size / (1024 * 1024)
                 print(f"\rProgress: {percent}% ({mb_downloaded:.1f}/{mb_total:.1f} MB)", end="", flush=True)
 
-        # Set timeout to 10 minutes for large downloads
-        urllib.request.urlretrieve(request, model_path, download_progress, timeout=600)
-        print("\nDownload complete!")
+        # Set global timeout to 10 minutes for large downloads
+        old_timeout = socket.getdefaulttimeout()
+        try:
+            socket.setdefaulttimeout(600)
+            urllib.request.urlretrieve(request, model_path, download_progress)
+            print("\nDownload complete!")
+        finally:
+            socket.setdefaulttimeout(old_timeout)
 
         # Verify file
         if not model_path.exists():
