@@ -1,25 +1,33 @@
-# NSFW Model Auto-Download Setup
+# Model Auto-Download Setup
 
 ## Overview
 
-The NSFW detection model (`classifier_nsfw.onnx`) is now automatically downloaded during Docker build. No manual setup required!
+Both the NSFW detection model (`classifier_nsfw.onnx`) and MediaPipe face detection models are now automatically downloaded during Docker build. No manual setup required!
 
 ## How It Works
 
-### Build Phase
-1. When building the Docker image, `scripts/download_nsfw_model.py` runs automatically
-2. Downloads the latest NudeNet v3 classifier from GitHub releases
-3. Saves to `/app/models/classifier_nsfw.onnx` inside the container
+### Build Phase (Two Models Downloaded)
+
+**1. NSFW Detection Model**
+- Script: `scripts/download_nsfw_model.py`
+- Downloads latest NudeNet v3 classifier from GitHub releases
+- Saves to `/app/models/classifier_nsfw.onnx` (~300 MB)
+
+**2. MediaPipe Face Detection Model**
+- Script: `scripts/download_mediapipe_models.py`
+- Downloads full-range face detection model from Google Cloud Storage
+- Saves to `/app/models/mediapipe/face_detection_full_range.tflite` (~40 MB)
 
 ### Runtime Fallback
-If the model is missing at runtime (e.g., pulled from old cached image):
-1. `entrypoint.sh` checks if the model exists
-2. If missing, it attempts to download it at startup
-3. Falls back to manual download instructions if automatic download fails
+If models are missing at runtime (e.g., pulled from old cached image):
+1. `entrypoint.sh` checks for both models
+2. If missing, it attempts to download them at startup
+3. `MEDIAPIPE_HOME` environment variable points to cached models
+4. Falls back to automatic download if manual download fails
 
 ## Download Methods
 
-The script supports multiple download methods with automatic fallback:
+Both download scripts support multiple download methods with automatic fallback:
 
 1. **Python urllib** (primary)
    - Cross-platform, built-in
@@ -32,6 +40,14 @@ The script supports multiple download methods with automatic fallback:
 3. **wget** (fallback 2)  
    - If curl fails, tries `wget`
    - Good HTTPS support
+
+## Models Downloaded
+
+| Model | Source | Size | Type |
+|-------|--------|------|------|
+| `classifier_nsfw.onnx` | NudeNet v3 (GitHub) | ~300 MB | NSFW Detection |
+| `face_detection_full_range.tflite` | MediaPipe (Google Cloud) | ~40 MB | Face Detection |
+| **Total** | | **~340 MB** | Bundled in image |
 
 ## Building the Docker Image
 
@@ -49,18 +65,27 @@ The model will be ~300 MB and will be downloaded during build.
 
 ## Troubleshooting
 
-### If download fails during build:
+### Check if models were downloaded:
 
 ```bash
-# Build still succeeds (model download is not critical)
-# At runtime, the entrypoint will attempt download again
-
-# Check if model was downloaded:
+# Inside container
 docker exec <container_id> ls -lh /app/models/
+docker exec <container_id> ls -lh /app/models/mediapipe/
 ```
 
-### Manual download (if automatic fails):
+### If downloads fail during build:
 
+```bash
+# Build still succeeds (models can be downloaded at runtime)
+# At runtime, entrypoint will attempt download again
+
+# Monitor build logs for errors:
+docker build -t mediapipe-nsfw-api:latest . 2>&1 | grep -E "(Error|Warning|Downloaded)"
+```
+
+### Manual model setup (if automatic fails):
+
+**For NSFW Model:**
 ```bash
 # Download directly
 curl -L -o classifier_nsfw.onnx \
@@ -68,9 +93,39 @@ curl -L -o classifier_nsfw.onnx \
 
 # Copy to container
 docker cp classifier_nsfw.onnx <container_id>:/app/models/
+```
 
-# Or mount volume
-docker run -v $(pwd)/models:/app/models mediapipe-nsfw-api:latest
+**For MediaPipe Model:**
+```bash
+# Download directly
+curl -L -o face_detection_full_range.tflite \
+  https://storage.googleapis.com/mediapipe-assets/face_detection_full_range.tflite
+
+# Copy to container
+docker cp face_detection_full_range.tflite <container_id>:/app/models/mediapipe/
+```
+
+**Or mount models volume:**
+```bash
+docker run -p 8000:8000 \
+  -v $(pwd)/models:/app/models \
+  -e API_KEYS=your-key \
+  mediapipe-nsfw-api:latest
+```
+
+### Verify models are working:
+
+```bash
+# Check Face Blur (should work regardless)
+curl -X POST "http://localhost:8000/faces/blur" \
+  -H "X-API-Key: your-key" \
+  -F "file=@test_image.jpg" \
+  -F "blur_strength=25"
+
+# Check NSFW Detection (requires model)
+curl -X POST "http://localhost:8000/nsfw/check" \
+  -H "X-API-Key: your-key" \
+  -F "file=@test_image.jpg"
 ```
 
 ## Environment Variables
@@ -86,17 +141,36 @@ INSTALL_DEPS=false
 
 ## Performance Notes
 
-- **First build**: ~5-10 minutes (includes model download)
+- **First build**: ~10-15 minutes (downloads both models, ~340 MB total)
 - **Subsequent builds**: Much faster (Docker layer caching)
-- **Runtime startup**: < 1s (model already cached)
+- **Container size**: +340 MB (models included in image)
+- **Runtime startup**: < 500ms (models pre-loaded, no download needed)
+- **First API request**: ~100-500ms (models initialized in memory)
+
+**Benefits of pre-downloaded models:**
+- No network calls at startup
+- Consistent, reproducible deployments
+- Faster response times
+- Works in air-gapped environments
 
 ## Model Information
 
+### NSFW Detection Model
 - **Source**: [NudeNet v3](https://github.com/notAI-tech/NudeNet)
 - **Filename**: `classifier_nsfw.onnx`
 - **Size**: ~300 MB
 - **Format**: ONNX (Open Neural Network Exchange)
-- **Framework**: Compatible with ONNX Runtime
+- **Framework**: ONNX Runtime
+- **Categories**: safe, partially_nude, nude
+
+### Face Detection Model (MediaPipe)
+- **Source**: [Google MediaPipe](https://github.com/google/mediapipe)
+- **Filename**: `face_detection_full_range.tflite`
+- **Size**: ~40 MB
+- **Format**: TFLite (TensorFlow Lite)
+- **Framework**: MediaPipe
+- **Range**: Full-range (up to 5m away)
+- **Output**: Bounding boxes + confidence scores
 
 ## Testing NSFW Endpoint
 
@@ -121,21 +195,57 @@ curl -X POST "http://localhost:8000/nsfw/check" \
 
 ## Production Deployment
 
-1. Build image with model included:
-   ```bash
-   docker build -t mediapipe-nsfw-api:v1.0.0 .
-   ```
+### 1. Build image with all models included:
+```bash
+docker build -t mediapipe-nsfw-api:v1.0.0 .
+```
 
-2. Push to registry:
-   ```bash
-   docker push your-registry/mediapipe-nsfw-api:v1.0.0
-   ```
+This will:
+- Download NSFW model (~300 MB)
+- Download MediaPipe face detection model (~40 MB)
+- Bundle both into the image
+- Set up environment variables
 
-3. Deploy to production:
-   ```bash
-   docker run -p 8000:8000 \
-     -e API_KEYS=prod-key-1,prod-key-2 \
-     your-registry/mediapipe-nsfw-api:v1.0.0
-   ```
+### 2. Push to registry:
+```bash
+# Tag for registry
+docker tag mediapipe-nsfw-api:v1.0.0 your-registry/mediapipe-nsfw-api:v1.0.0
 
-The model will be bundled with the image, so no external downloads at runtime.
+# Push image
+docker push your-registry/mediapipe-nsfw-api:v1.0.0
+```
+
+### 3. Deploy to production:
+```bash
+docker run -d \
+  --name nsfw-api \
+  -p 8000:8000 \
+  -e API_KEYS=prod-key-1,prod-key-2 \
+  -e LOG_LEVEL=info \
+  --restart=unless-stopped \
+  your-registry/mediapipe-nsfw-api:v1.0.0
+```
+
+### 4. Verify deployment:
+```bash
+# Check health
+curl http://localhost:8000/health
+
+# Test face blur
+curl -X POST "http://localhost:8000/faces/blur" \
+  -H "X-API-Key: prod-key-1" \
+  -F "file=@test_image.jpg"
+
+# Test NSFW detection  
+curl -X POST "http://localhost:8000/nsfw/check" \
+  -H "X-API-Key: prod-key-1" \
+  -F "file=@test_image.jpg"
+```
+
+### Advantages of bundled models:
+- ✅ No model downloads at startup
+- ✅ No external dependencies
+- ✅ Consistent across all deployments
+- ✅ Works in air-gapped environments
+- ✅ ~340 MB image size (models included)
+- ✅ Deterministic behavior

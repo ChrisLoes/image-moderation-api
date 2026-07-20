@@ -19,12 +19,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app/ ./app/
 COPY entrypoint.sh .
 COPY scripts/download_nsfw_model.py ./scripts/
+COPY scripts/download_mediapipe_models.py ./scripts/
 
 # Make entrypoint executable, create logs and models directories
-RUN chmod +x entrypoint.sh && mkdir -p logs models
+RUN chmod +x entrypoint.sh && mkdir -p logs models/mediapipe
 
-# Download latest NSFW model before creating non-root user
-RUN python scripts/download_nsfw_model.py
+# Download latest models before creating non-root user
+RUN echo "Downloading NSFW model..." && python scripts/download_nsfw_model.py
+RUN echo "Downloading MediaPipe models..." && python scripts/download_mediapipe_models.py
 
 # Create non-root user for security
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
