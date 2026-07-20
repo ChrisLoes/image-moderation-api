@@ -1,4 +1,4 @@
-name: Test Docker Image Build
+name: ✅ Docker Build & Security Scan
 
 on:
   pull_request:

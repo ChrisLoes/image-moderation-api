@@ -1,4 +1,4 @@
-name: Auto-Fix Build Issues
+name: 🔧 Diagnose & Fix Build Issues (Manual)
 
 on:
   workflow_dispatch:

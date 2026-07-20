@@ -1,4 +1,4 @@
-name: Test Container Health Before Release
+name: 💚 Container Health Check (Pre-Release)
 
 on:
   workflow_dispatch:
