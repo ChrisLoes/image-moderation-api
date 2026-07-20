@@ -8,7 +8,7 @@ pillow==11.0.0
 pillow-heif==0.7.1
 numpy==1.26.4
 mediapipe==0.10.14
-opencv-python==4.10.1.26
+opencv-python==4.11.0.86
 onnxruntime==1.27.0
 httpx==0.28.1
 requests==2.31.0
