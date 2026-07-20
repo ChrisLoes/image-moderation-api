@@ -2,6 +2,7 @@ import logging
 import logging.handlers
 import os
 import time
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
@@ -52,6 +53,29 @@ root_logger.addHandler(error_handler)
 logger = logging.getLogger(__name__)
 logger.info(f"Logging configured at level: {log_level}")
 
+# Lifespan context manager (defined after logger)
+@asynccontextmanager
+async def lifespan_handler(app: FastAPI):
+    """Manage application lifespan (startup and shutdown)."""
+    # Startup
+    logger.info("=" * 60)
+    logger.info("MediaPipe NSFW Detection API Starting")
+    logger.info("=" * 60)
+    logger.info(f"API Version: 1.0.0")
+    logger.info(f"Environment: {os.getenv('ENVIRONMENT', 'production')}")
+    logger.info(f"Log Level: {log_level}")
+    logger.info(f"Face Detection Intensity: {settings.face_detection_intensity}")
+    logger.info(f"NSFW Detection Intensity: {settings.nsfw_detection_intensity}")
+    logger.info("=" * 60)
+
+    yield
+
+    # Shutdown
+    logger.info("=" * 60)
+    logger.info("MediaPipe NSFW Detection API Shutting Down")
+    logger.info("=" * 60)
+
+
 # Create FastAPI app
 app = FastAPI(
     title="MediaPipe NSFW Detection API",
@@ -60,6 +84,7 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
+    lifespan=lifespan_handler,
 )
 
 # Request logging middleware
@@ -105,29 +130,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Startup event
-@app.on_event("startup")
-async def startup_event():
-    """Log startup information."""
-    logger.info("=" * 60)
-    logger.info("MediaPipe NSFW Detection API Starting")
-    logger.info("=" * 60)
-    logger.info(f"API Version: 1.0.0")
-    logger.info(f"Environment: {os.getenv('ENVIRONMENT', 'production')}")
-    logger.info(f"Log Level: {log_level}")
-    logger.info(f"Face Detection Intensity: {settings.face_detection_intensity}")
-    logger.info(f"NSFW Detection Intensity: {settings.nsfw_detection_intensity}")
-    logger.info("=" * 60)
-
-
-# Shutdown event
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Log shutdown information."""
-    logger.info("=" * 60)
-    logger.info("MediaPipe NSFW Detection API Shutting Down")
-    logger.info("=" * 60)
 
 
 # Include routers
