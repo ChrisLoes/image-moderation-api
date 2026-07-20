@@ -61,16 +61,17 @@ def download_model(url):
             }
         )
 
-        # Download with progress
+        # Download with progress and timeout
         def download_progress(block_num, block_size, total_size):
             if total_size > 0:
                 downloaded = block_num * block_size
                 percent = min(downloaded * 100 // total_size, 100)
                 mb_downloaded = downloaded / (1024 * 1024)
                 mb_total = total_size / (1024 * 1024)
-                print(f"\rProgress: {percent}% ({mb_downloaded:.1f}/{mb_total:.1f} MB)", end="")
+                print(f"\rProgress: {percent}% ({mb_downloaded:.1f}/{mb_total:.1f} MB)", end="", flush=True)
 
-        urllib.request.urlretrieve(request, model_path, download_progress)
+        # Set timeout to 10 minutes for large downloads
+        urllib.request.urlretrieve(request, model_path, download_progress, timeout=600)
         print("\nDownload complete!")
 
         # Verify file
