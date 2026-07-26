@@ -36,6 +36,20 @@ jobs:
           pip install pytest pytest-cov pytest-asyncio pytest-timeout httpx
           pip install -r requirements.txt
 
+      - name: Start API server
+        run: |
+          python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+          echo "API server PID: $!"
+          # Wait for API to be ready
+          for i in {1..30}; do
+            if curl -s http://localhost:8000/health > /dev/null 2>&1; then
+              echo "✓ API is ready"
+              break
+            fi
+            echo "Attempt $i/30: Waiting for API..."
+            sleep 1
+          done
+
       - name: Run E2E tests with pytest
         run: |
           pytest tests/test_e2e_blur.py tests/test_e2e_nsfw.py -v --tb=short --timeout=60 --maxfail=3
