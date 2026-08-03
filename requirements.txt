@@ -4,7 +4,7 @@ python-multipart==0.0.32
 pydantic==2.13.4
 pydantic-settings==2.14.2
 python-dotenv==1.2.2
-pillow==11.0.0
+pillow==12.3.0
 pillow-heif==1.5.0
 numpy==1.26.0
 mediapipe==0.10.14
