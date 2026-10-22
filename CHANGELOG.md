@@ -25,6 +25,9 @@ All notable changes to this project will be documented in this file.
 - Face detection ensemble: OpenCV YuNet + MediaPipe BlazeFace.
 - `reasons` and `findings` (boxes) in the NSFW response; health check reports model state.
 - `scripts/download_models.py`, `scripts/evaluate_detectors.py`, `tests/test_detectors.py`.
+- Release workflow (Actions → "Release"): builds and pushes the Docker image as
+  `<version>`, `<major>.<minor>` and `latest`, creates tag and GitHub release from this file.
+- Version is defined once in `app/__init__.py` and shown in `/health`, `/` and `/docs`.
 
 ## [v1.0.13] - 2026-07-16
 

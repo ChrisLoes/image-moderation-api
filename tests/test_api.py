@@ -34,6 +34,10 @@ class TestHealthEndpoint:
         assert "status" in data
         assert data["status"] in ["healthy", "ok", "alive"]
 
+    def test_health_reports_package_version(self):
+        from app import __version__
+        assert client.get("/health").json()["version"] == __version__
+
 
 class TestAPIEndpoints:
     def test_docs_endpoint_available(self):
