@@ -1,0 +1,108 @@
+name: 🚀 Release
+
+# Creates a release from master: builds and pushes the Docker image as
+# <version> and <major>.<minor>, then creates the Git tag v<version> and a GitHub
+# release with the matching CHANGELOG.md section as notes.
+#
+# Start: Actions → "Release" → Run workflow (or via the API / workflow_dispatch).
+# The version comes from app/__init__.py (__version__) unless given explicitly;
+# CHANGELOG.md must contain a section "## [v<version>]".
+#
+# Note: a tag created with GITHUB_TOKEN does not trigger other workflows, so the
+# image is built here and not by docker-build-push.yml.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version without "v" (empty = __version__ from app/__init__.py)
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout master
+        uses: actions/checkout@v7
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Determine version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          code_version=$(python3 -c "import re; print(re.search(r'__version__ = \"([^\"]+)\"', open('app/__init__.py').read()).group(1))")
+          version="${INPUT_VERSION:-$code_version}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid version '$version' (expected e.g. 1.2.3)"; exit 1
+          fi
+          if [ "$version" != "$code_version" ]; then
+            echo "::error::Version $version does not match __version__ $code_version in app/__init__.py"; exit 1
+          fi
+          if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            echo "::error::Tag v$version already exists"; exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "minor=${version%.*}" >> "$GITHUB_OUTPUT"
+
+      - name: Extract release notes from CHANGELOG.md
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          awk -v header="## [v$VERSION]" '
+            index($0, header) == 1 { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "::error::CHANGELOG.md has no section '## [v$VERSION]'"; exit 1
+          fi
+          {
+            echo ""
+            echo "Docker: \`docker pull ${{ secrets.DOCKERHUB_USERNAME }}/image-moderation-api:$VERSION\`"
+          } >> release-notes.md
+          cat release-notes.md
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: |
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/image-moderation-api:${{ steps.version.outputs.version }}
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/image-moderation-api:${{ steps.version.outputs.minor }}
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/image-moderation-api:latest
+
+      # Only after the image is published, so a release always has its image
+      - name: Create tag and GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          title=$(grep -m1 "^## \[v$VERSION\]" CHANGELOG.md | sed -E 's/^## \[(v[^]]+)\].*/\1/')
+          gh release create "v$VERSION" \
+            --target "$(git rev-parse HEAD)" \
+            --title "$title" \
+            --notes-file release-notes.md
+          echo "## Released v$VERSION" >> "$GITHUB_STEP_SUMMARY"
+          cat release-notes.md >> "$GITHUB_STEP_SUMMARY"

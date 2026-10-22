@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from app.config import settings
 from app.models import HealthResponse
-from app import model_files
+from app import __version__, model_files
 from app.routers import faces, nsfw
 
 # Setup logging directory
@@ -62,7 +62,7 @@ async def lifespan_handler(app: FastAPI):
     logger.info("=" * 60)
     logger.info("MediaPipe NSFW Detection API Starting")
     logger.info("=" * 60)
-    logger.info(f"API Version: 1.0.0")
+    logger.info(f"API Version: {__version__}")
     logger.info(f"Environment: {os.getenv('ENVIRONMENT', 'production')}")
     logger.info(f"Log Level: {log_level}")
     logger.info(f"Face Detection Intensity: {settings.face_detection_intensity}")
@@ -81,7 +81,7 @@ async def lifespan_handler(app: FastAPI):
 app = FastAPI(
     title="MediaPipe NSFW Detection API",
     description="API for face detection/blurring and NSFW content detection",
-    version="1.0.0",
+    version=__version__,
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
@@ -151,7 +151,7 @@ app.include_router(nsfw.router)
                 "application/json": {
                     "example": {
                         "status": "healthy",
-                        "version": "1.0.0",
+                        "version": "1.1.0",
                         "services": {
                             "face_detection": "ready",
                             "nsfw_detection": "ready",
@@ -188,7 +188,7 @@ async def health_check() -> HealthResponse:
 
     return HealthResponse(
         status="healthy",
-        version="1.0.0",
+        version=__version__,
         services={
             "face_detection": state("face_yunet", "face_blazeface"),
             "nsfw_detection": state("nudenet"),
@@ -222,7 +222,7 @@ async def root():
     """
     return {
         "message": "MediaPipe NSFW Detection API",
-        "version": "1.0.0",
+        "version": __version__,
         "docs": "/docs (Swagger UI)",
         "redoc": "/redoc (ReDoc documentation)",
         "endpoints": {
@@ -239,7 +239,7 @@ def custom_openapi():
         return app.openapi_schema
     openapi_schema = get_openapi(
         title="MediaPipe NSFW Detection API",
-        version="1.0.0",
+        version=__version__,
         description="API for face detection/blurring and NSFW content detection",
         routes=app.routes,
     )

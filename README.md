@@ -375,6 +375,11 @@ docker-compose down
 docker-compose up -d
 ```
 
+### Creating a Release
+1. Set `__version__` in `app/__init__.py` and add a section `## [vX.Y.Z] - date` to `CHANGELOG.md` (via PR)
+2. After the merge: GitHub → Actions → **🚀 Release** → Run workflow
+3. The workflow pushes the Docker image as `X.Y.Z`, `X.Y` and `latest` and creates tag and release
+
 ### Pushing Your Own Image
 
 If you build locally and want to push to Docker Hub:
