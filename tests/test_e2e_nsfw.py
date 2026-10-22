@@ -47,7 +47,7 @@ class TestNSFWDetectionE2E:
         data = response.json()
 
         # Validate required fields
-        required_fields = ['success', 'is_nsfw', 'confidence', 'primary_detection']
+        required_fields = ['success', 'is_nsfw', 'nsfw_score', 'confidence', 'primary_detection', 'reasons']
         for field in required_fields:
             assert field in data, f"Missing required field: {field}"
 
@@ -56,6 +56,8 @@ class TestNSFWDetectionE2E:
         assert isinstance(data['is_nsfw'], bool)
         assert isinstance(data['confidence'], (int, float))
         assert isinstance(data['primary_detection'], str)
+        assert 0.0 <= data['nsfw_score'] <= 1.0
+        assert isinstance(data['reasons'], list)
 
     def test_nsfw_confidence_range(self, api_is_running, api_url, api_headers, simple_test_image, image_to_bytes):
         """Test confidence score is between 0 and 1."""
@@ -95,7 +97,7 @@ class TestNSFWDetectionE2E:
         data = response.json()
 
         primary = data['primary_detection']
-        valid_categories = ['safe', 'partially_nude', 'nude']
+        valid_categories = ['safe', 'partially_nude', 'nude', 'offensive_gesture']
         assert primary in valid_categories, f"Invalid primary detection: {primary}"
 
     def test_nsfw_with_return_details(self, api_is_running, api_url, api_headers, simple_test_image, image_to_bytes):
@@ -123,7 +125,7 @@ class TestNSFWDetectionE2E:
         assert isinstance(detections, dict)
 
         # Should have all 3 categories
-        expected_categories = ['safe', 'partially_nude', 'nude']
+        expected_categories = ['safe', 'partially_nude', 'nude', 'offensive_gesture']
         for category in expected_categories:
             assert category in detections, f"Missing category: {category}"
             assert isinstance(detections[category], (int, float))

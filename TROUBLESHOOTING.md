@@ -35,7 +35,7 @@ pip install -r requirements.txt
 
 ### 2. Verify Installation
 ```bash
-python test_face_detection.py
+python -m pytest tests/test_detectors.py -v
 ```
 
 ### 3. Test the API

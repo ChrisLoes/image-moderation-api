@@ -78,6 +78,27 @@ def simple_test_image():
     return img
 
 
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+@pytest.fixture
+def face_test_image():
+    """Real photo with one face (NASA portrait, public domain)."""
+    return Image.open(FIXTURES / "astronaut.jpg").convert("RGB")
+
+
+@pytest.fixture
+def group_test_image():
+    """Six copies of the face photo, from large to small (~40 px face height)."""
+    face = Image.open(FIXTURES / "astronaut.jpg").convert("RGB")
+    canvas = Image.new("RGB", (1600, 900), (90, 110, 130))
+    x = 20
+    for size in (420, 300, 220, 160, 120, 90):
+        canvas.paste(face.resize((size, size)), (x, 450 - size // 2))
+        x += size + 20
+    return canvas
+
+
 @pytest.fixture
 def realistic_test_image():
     """Create a more realistic test image."""

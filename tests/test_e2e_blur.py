@@ -12,9 +12,9 @@ import io
 class TestFaceBlurE2E:
     """E2E tests for /faces/blur endpoint."""
 
-    def test_blur_basic_success(self, api_is_running, api_url, api_headers, simple_test_image, image_to_bytes):
+    def test_blur_basic_success(self, api_is_running, api_url, api_headers, face_test_image, image_to_bytes):
         """Test basic face blur request succeeds."""
-        img_bytes = image_to_bytes(simple_test_image)
+        img_bytes = image_to_bytes(face_test_image)
 
         response = requests.post(
             f"{api_url}/faces/blur",
@@ -31,9 +31,9 @@ class TestFaceBlurE2E:
         assert 'processed_image_base64' in data
         assert len(data['processed_image_base64']) > 0
 
-    def test_blur_response_structure(self, api_is_running, api_url, api_headers, simple_test_image, image_to_bytes):
+    def test_blur_response_structure(self, api_is_running, api_url, api_headers, face_test_image, image_to_bytes):
         """Test response has correct structure."""
-        img_bytes = image_to_bytes(simple_test_image)
+        img_bytes = image_to_bytes(face_test_image)
 
         response = requests.post(
             f"{api_url}/faces/blur",
@@ -57,12 +57,12 @@ class TestFaceBlurE2E:
         assert isinstance(data['faces_detected'], int)
         assert isinstance(data['processed_image_base64'], str)
 
-    def test_blur_strength_produces_different_results(self, api_is_running, api_url, api_headers, simple_test_image, image_to_bytes, decode_base64_image, compare_images):
+    def test_blur_strength_produces_different_results(self, api_is_running, api_url, api_headers, face_test_image, image_to_bytes, decode_base64_image, compare_images):
         """Test that different blur strengths produce different images."""
         blur_results = {}
 
         for strength in [10, 50]:
-            img_bytes = image_to_bytes(simple_test_image)
+            img_bytes = image_to_bytes(face_test_image)
             response = requests.post(
                 f"{api_url}/faces/blur",
                 files={'file': ('test.png', img_bytes, 'image/png')},
@@ -81,13 +81,14 @@ class TestFaceBlurE2E:
 
         # Compare
         comparison = compare_images(img_10, img_50)
-        assert not comparison['are_same'], "Different blur strengths should produce different images"
+        # Only the face area changes, so compare for any difference
+        assert comparison['difference'] > 0, "Different blur strengths should produce different images"
         assert comparison['difference'] is not None
         assert comparison['difference'] > 0
 
-    def test_blur_parameter_priority(self, api_is_running, api_url, api_headers, simple_test_image, image_to_bytes):
+    def test_blur_parameter_priority(self, api_is_running, api_url, api_headers, face_test_image, image_to_bytes):
         """Test that explicit blur_strength overrides intensity."""
-        img_bytes = image_to_bytes(simple_test_image)
+        img_bytes = image_to_bytes(face_test_image)
 
         # intensity=low with explicit blur_strength=50 should use 50
         response = requests.post(
@@ -103,12 +104,12 @@ class TestFaceBlurE2E:
         # If blur_strength parameter overrides, response should indicate blur was applied
         assert data['success'] is True
 
-    def test_blur_with_padding(self, api_is_running, api_url, api_headers, simple_test_image, image_to_bytes, decode_base64_image, compare_images):
+    def test_blur_with_padding(self, api_is_running, api_url, api_headers, face_test_image, image_to_bytes, decode_base64_image, compare_images):
         """Test that different padding values produce different results."""
         padding_results = {}
 
         for padding in [0, 20]:
-            img_bytes = image_to_bytes(simple_test_image)
+            img_bytes = image_to_bytes(face_test_image)
             response = requests.post(
                 f"{api_url}/faces/blur",
                 files={'file': ('test.png', img_bytes, 'image/png')},
@@ -127,14 +128,15 @@ class TestFaceBlurE2E:
 
         # Compare - should be different
         comparison = compare_images(img_0, img_20)
-        assert not comparison['are_same'], "Different padding should produce different blur areas"
+        # Only the face area changes, so compare for any difference
+        assert comparison['difference'] > 0, "Different padding should produce different blur areas"
 
-    def test_blur_intensity_levels(self, api_is_running, api_url, api_headers, realistic_test_image, image_to_bytes):
+    def test_blur_intensity_levels(self, api_is_running, api_url, api_headers, group_test_image, image_to_bytes):
         """Test that intensity levels are applied correctly."""
         intensity_results = {}
 
         for intensity in ['low', 'medium', 'high']:
-            img_bytes = image_to_bytes(realistic_test_image)
+            img_bytes = image_to_bytes(group_test_image)
             response = requests.post(
                 f"{api_url}/faces/blur",
                 files={'file': ('test.png', img_bytes, 'image/png')},
@@ -186,9 +188,9 @@ class TestFaceBlurE2E:
 
         assert response.status_code in [400, 422], f"Expected 400 or 422, got {response.status_code}"
 
-    def test_blur_missing_api_key(self, api_is_running, api_url, simple_test_image, image_to_bytes):
+    def test_blur_missing_api_key(self, api_is_running, api_url, face_test_image, image_to_bytes):
         """Test blur without API key."""
-        img_bytes = image_to_bytes(simple_test_image)
+        img_bytes = image_to_bytes(face_test_image)
 
         response = requests.post(
             f"{api_url}/faces/blur",
@@ -199,9 +201,9 @@ class TestFaceBlurE2E:
 
         assert response.status_code == 401
 
-    def test_blur_invalid_api_key(self, api_is_running, api_url, simple_test_image, image_to_bytes):
+    def test_blur_invalid_api_key(self, api_is_running, api_url, face_test_image, image_to_bytes):
         """Test blur with invalid API key."""
-        img_bytes = image_to_bytes(simple_test_image)
+        img_bytes = image_to_bytes(face_test_image)
 
         response = requests.post(
             f"{api_url}/faces/blur",
@@ -212,9 +214,9 @@ class TestFaceBlurE2E:
 
         assert response.status_code == 401
 
-    def test_blur_image_base64_is_valid(self, api_is_running, api_url, api_headers, simple_test_image, image_to_bytes, decode_base64_image):
+    def test_blur_image_base64_is_valid(self, api_is_running, api_url, api_headers, face_test_image, image_to_bytes, decode_base64_image):
         """Test that returned base64 image is valid and can be decoded."""
-        img_bytes = image_to_bytes(simple_test_image)
+        img_bytes = image_to_bytes(face_test_image)
 
         response = requests.post(
             f"{api_url}/faces/blur",
@@ -236,9 +238,9 @@ class TestFaceBlurE2E:
         except Exception as e:
             pytest.fail(f"Failed to decode base64 image: {e}")
 
-    def test_blur_large_blur_strength(self, api_is_running, api_url, api_headers, simple_test_image, image_to_bytes):
+    def test_blur_large_blur_strength(self, api_is_running, api_url, api_headers, face_test_image, image_to_bytes):
         """Test blur with very large blur strength."""
-        img_bytes = image_to_bytes(simple_test_image)
+        img_bytes = image_to_bytes(face_test_image)
 
         response = requests.post(
             f"{api_url}/faces/blur",
@@ -253,9 +255,9 @@ class TestFaceBlurE2E:
         assert data['success'] is True
         assert 'processed_image_base64' in data
 
-    def test_blur_zero_padding(self, api_is_running, api_url, api_headers, simple_test_image, image_to_bytes):
+    def test_blur_zero_padding(self, api_is_running, api_url, api_headers, face_test_image, image_to_bytes):
         """Test blur with zero padding (no padding)."""
-        img_bytes = image_to_bytes(simple_test_image)
+        img_bytes = image_to_bytes(face_test_image)
 
         response = requests.post(
             f"{api_url}/faces/blur",
@@ -268,3 +270,27 @@ class TestFaceBlurE2E:
         assert response.status_code == 200
         data = response.json()
         assert data['success'] is True
+
+
+class TestFaceDetectionQualityE2E:
+    """Real faces must be found, including small ones in group photos."""
+
+    def test_single_face_is_found(self, api_is_running, api_url, api_headers, face_test_image, image_to_bytes):
+        response = requests.post(
+            f"{api_url}/faces/blur",
+            files={'file': ('face.png', image_to_bytes(face_test_image), 'image/png')},
+            headers=api_headers,
+            timeout=30,
+        )
+        assert response.status_code == 200
+        assert response.json()['faces_detected'] == 1
+
+    def test_all_faces_in_group_photo_are_found(self, api_is_running, api_url, api_headers, group_test_image, image_to_bytes):
+        response = requests.post(
+            f"{api_url}/faces/blur",
+            files={'file': ('group.png', image_to_bytes(group_test_image), 'image/png')},
+            headers=api_headers,
+            timeout=30,
+        )
+        assert response.status_code == 200
+        assert response.json()['faces_detected'] == 6

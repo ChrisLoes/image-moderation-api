@@ -35,8 +35,8 @@ A high-performance REST API for intelligent image moderation. Detect NSFW conten
 ## Features
 
 ### Core Capabilities
-- 🔍 **NSFW Detection** - Classify images as safe/NSFW using NudeNet v3 (ONNX)
-- 👤 **Face Detection & Blur** - Detect and blur faces using MediaPipe
+- 🔍 **NSFW Detection** - Nudity via NudeNet v3 body-part detector (ONNX) plus offensive hand gestures (middle finger) via MediaPipe hand landmarks
+- 👤 **Face Detection & Blur** - Two detectors combined (OpenCV YuNet + MediaPipe BlazeFace), finds small faces in group photos too; EXIF orientation of phone photos is respected
 - ⚡ **High Performance** - Optimized for low-latency, high-throughput processing
 - 🔐 **Secure by Default** - API key authentication, request validation
 - 📊 **Configurable** - Fine-tune sensitivity without code changes
@@ -195,16 +195,33 @@ curl -X POST http://localhost:8000/nsfw/check \
 ```json
 {
   "success": true,
-  "is_nsfw": false,
-  "confidence": 0.95,
-  "primary_detection": "safe",
+  "is_nsfw": true,
+  "nsfw_score": 0.91,
+  "confidence": 0.91,
+  "primary_detection": "offensive_gesture",
+  "reasons": ["offensive_gesture"],
   "detections": {
-    "safe": 0.95,
-    "partially_nude": 0.04,
-    "nude": 0.01
-  }
+    "safe": 0.09,
+    "partially_nude": 0.0,
+    "nude": 0.02,
+    "offensive_gesture": 0.91
+  },
+  "findings": [
+    {"label": "middle_finger", "category": "offensive_gesture", "confidence": 0.91, "box": [412, 80, 160, 210]}
+  ]
 }
 ```
+
+`nsfw_score` = highest of `nude`, `offensive_gesture` and half of `partially_nude`
+(swimwear/underwear alone never exceeds 0.5). `is_nsfw` = `nsfw_score` above the threshold.
+
+**Measured quality** (`scripts/evaluate_detectors.py`, everyday photos of people as negatives):
+
+| nsfw_score threshold | Middle finger found (HaGRIDv2) | False alarms on people photos |
+|---|---|---|
+| 0.4 | 82 % | 4.7 % |
+| 0.5 | 78 % | 3.1 % |
+| 0.6 (default, `medium`) | 72 % | 1.6 % |
 
 **Parameters:**
 | Name | Type | Default | Description |
@@ -212,7 +229,10 @@ curl -X POST http://localhost:8000/nsfw/check \
 | `file` | File | required | Image file (JPEG, PNG, GIF, WebP, HEIF, HEIC) |
 | `intensity` | String | medium | Detection level: `low`, `medium`, `high` |
 | `threshold` | Float | - | Override threshold (0.0-1.0) |
-| `return_details` | Boolean | false | Include all category scores |
+| `return_details` | Boolean | false | Include all category scores and the individual findings |
+| `check_gestures` | Boolean | true | Also check for offensive hand gestures (`NSFW_CHECK_GESTURES`) |
+
+Options can be sent as form fields (`-F`) or query parameters.
 
 ---
 
@@ -245,7 +265,12 @@ curl -X POST http://localhost:8000/faces/blur \
 | `file` | File | required | Image file |
 | `intensity` | String | medium | Blur level: `low`, `medium`, `high` |
 | `blur_strength` | Integer | - | Kernel size (1-50, must be odd) |
-| `confidence_threshold` | Float | - | Detection sensitivity (0.0-1.0) |
+| `confidence_threshold` | Float | - | Minimum face score (0.0-1.0); lower = more faces |
+| `face_padding` | Integer | max(10 px, 15 % of face) | Extra margin around each face in px |
+| `blur_method` | String | gaussian | `gaussian`, `pixelate`, `hybrid` |
+
+**Measured quality** (WIDER FACE validation set, 404 images, confidence 0.5): 85 % of faces
+from 20 px height found, 93 % from 80 px. MediaPipe alone found 7 % / 33 %.
 
 ---
 
@@ -392,6 +417,12 @@ FACE_BLUR_STRENGTH=25             # 1-50, must be odd
 ```env
 NSFW_DETECTION_INTENSITY=medium   # low, medium, high
 NSFW_THRESHOLD=0.6                # 0.0-1.0 (ignored if intensity set)
+NSFW_CHECK_GESTURES=true          # also flag the middle finger
+```
+
+### Models
+```env
+MODELS_DIR=models                 # downloaded and checksum-verified automatically
 ```
 
 ### Image Constraints
@@ -406,9 +437,9 @@ MAX_IMAGE_HEIGHT=4000             # pixels
 **Face Detection:**
 | Level | Confidence | Blur | Use Case |
 |-------|-----------|------|----------|
-| low | 0.3 | 11px | Minimal privacy |
+| low | 0.8 | 11px | Only clearly visible faces |
 | medium | 0.5 | 25px | Balanced (recommended) |
-| high | 0.8 | 41px | Maximum privacy |
+| high | 0.3 | 41px | Maximum privacy (also small/half hidden faces) |
 
 **NSFW Detection:**
 | Level | Threshold | Use Case |
@@ -478,12 +509,12 @@ git clone https://github.com/ChrisLoes/image-moderation-api.git
 cd image-moderation-api
 ```
 
-### 2. Install NudeNet Model
+### 2. Download Models
 ```bash
-mkdir -p models
-curl -L https://github.com/notAI-tech/NudeNet/releases/download/v3/classifier_nsfw.onnx \
-  -o models/classifier_nsfw.onnx
+python scripts/download_models.py   # optional - otherwise downloaded on first request
 ```
+See [NSFW_MODEL_SETUP.md](NSFW_MODEL_SETUP.md) for the model list. MediaPipe needs
+`libegl1` and `libgles2` (`apt-get install libegl1 libgles2`).
 
 ### 3. Configure Environment
 ```bash
@@ -598,11 +629,12 @@ pytest tests/ -v
 
 ## 🐛 Troubleshooting
 
-### Model Not Found
-```
-Error: models/classifier_nsfw.onnx not found
-```
-**Solution:** Download NudeNet model to `models/` directory
+### Model Not Available (503)
+**Solution:** Run `python scripts/download_models.py` and check network access to
+storage.googleapis.com, huggingface.co and files.pythonhosted.org.
+
+### `libEGL.so.1: cannot open shared object file`
+**Solution:** `apt-get install libegl1 libgles2` (needed by MediaPipe)
 
 ### Out of Memory
 ```
