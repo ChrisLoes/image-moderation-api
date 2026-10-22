@@ -1,8 +1,8 @@
 import base64
 import io
 import logging
-from PIL import Image
-from fastapi import UploadFile, HTTPException, status
+from PIL import Image, ImageOps
+from fastapi import Request, UploadFile, HTTPException, status
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -84,6 +84,13 @@ async def validate_image(file: UploadFile) -> Image.Image:
             detail=f"Cannot process image file: {str(e)}",
         )
 
+    # Apply the EXIF orientation (phone photos are often stored sideways with a rotation
+    # flag). Without this, faces lie on their side and are missed by the detectors.
+    try:
+        image = ImageOps.exif_transpose(image)
+    except Exception as e:
+        logger.warning(f"Could not apply EXIF orientation: {e}")
+
     # Check dimensions
     width, height = image.size
     if width > settings.max_image_width or height > settings.max_image_height:
@@ -110,3 +117,40 @@ def image_to_base64(image: Image.Image) -> str:
     image.save(buffered, format="JPEG", quality=95)
     img_str = base64.b64encode(buffered.getvalue()).decode()
     return img_str
+
+
+async def form_fallback(request: Request, values: dict) -> dict:
+    """
+    Fill parameters that were not given as query parameters from multipart form fields.
+
+    Clients send options either in the URL (?intensity=high) or as form fields next to
+    the file (multipart). Both are accepted; the query parameter wins.
+    """
+    missing = [name for name, value in values.items() if value is None]
+    if not missing:
+        return values
+    form = await request.form()
+    result = dict(values)
+    for name in missing:
+        raw = form.get(name)
+        if raw is not None and isinstance(raw, str) and raw != "":
+            result[name] = raw
+    return result
+
+
+def parse_bool(value) -> bool | None:
+    if value is None or isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
+def parse_number(value, cast, name: str):
+    if value is None or isinstance(value, (int, float)):
+        return value
+    try:
+        return cast(value)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid value for '{name}'",
+        )

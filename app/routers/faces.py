@@ -1,38 +1,18 @@
 import cv2
 import numpy as np
-import mediapipe as mp
 import logging
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, status
+import PIL.Image
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Request, status
+from fastapi.concurrency import run_in_threadpool
 from typing import Optional
 from app.auth import verify_api_key
-from app.models import BlurFacesRequest, BlurFacesResponse
-from app.utils import validate_image, image_to_base64
+from app.detectors.faces import detect_faces
+from app.models import BlurFacesResponse
+from app.utils import validate_image, image_to_base64, form_fallback, parse_number
 from app.config import settings
 
 router = APIRouter(prefix="/faces", tags=["Face Detection"])
 logger = logging.getLogger(__name__)
-
-mp_face_detection = mp.solutions.face_detection
-
-
-def get_face_detector(confidence: float | None = None):
-    """Get face detector with specified confidence threshold."""
-    threshold = confidence or settings.face_detection_confidence
-    # Use model_selection=1 (full-range) for better detection of all faces
-    # including those further away (up to 5m). model_selection=0 is short-range (<2m)
-    try:
-        # Try newer MediaPipe API (without static_image_mode)
-        return mp_face_detection.FaceDetection(
-            model_selection=1,  # 1=full-range (detects faces up to 5m away)
-            min_detection_confidence=threshold
-        )
-    except TypeError:
-        # Fallback for older MediaPipe API (with static_image_mode)
-        return mp_face_detection.FaceDetection(
-            static_image_mode=True,  # Essential for static images
-            model_selection=1,  # Full-range detection
-            min_detection_confidence=threshold
-        )
 
 
 def apply_gaussian_blur(face_region: np.ndarray, blur_k: int) -> np.ndarray:
@@ -125,9 +105,11 @@ def apply_oval_mask(face_region: np.ndarray, blurred_region: np.ndarray) -> np.n
         400: {"description": "Invalid image format or dimensions"},
         401: {"description": "Missing or invalid API key"},
         413: {"description": "File too large (exceeds MAX_FILE_SIZE)"},
+        503: {"description": "Face detection models could not be loaded"},
     },
 )
 async def blur_faces(
+    request: Request,
     file: UploadFile = File(
         ...,
         description="Image file to process (JPEG, PNG, GIF, WebP). Max 8 MB, max 4000×4000 px.",
@@ -144,7 +126,8 @@ async def blur_faces(
 
     ## How It Works
     1. Receives image file and configuration parameters
-    2. Uses MediaPipe face detection to locate faces
+    2. Locates faces with two detectors (OpenCV YuNet for small/tilted faces, MediaPipe
+       BlazeFace for close-ups) and merges their results
     3. Applies blur to detected face regions (Gaussian, Pixelate, or Hybrid)
     4. Returns blurred image as base64-encoded PNG
 
@@ -154,9 +137,9 @@ async def blur_faces(
     3. Environment/config defaults
 
     ## Intensity Levels
-    - **low**: Confidence=0.3, Blur=11px (minimal, only obvious faces)
+    - **low**: Confidence=0.8, Blur=11px (minimal, only clearly visible faces)
     - **medium**: Confidence=0.5, Blur=25px (balanced, recommended)
-    - **high**: Confidence=0.8, Blur=41px (aggressive, all possible faces)
+    - **high**: Confidence=0.3, Blur=41px (aggressive, also small or half hidden faces)
 
     ## Blur Methods
     - **gaussian**: Smooth Gaussian blur (default, natural looking)
@@ -169,7 +152,24 @@ async def blur_faces(
     - Strong pixelation: `POST /faces/blur -F "file=@image.jpg" -F "blur_strength=150" -F "blur_method=pixelate"`
     - Custom blur: `POST /faces/blur -F "file=@image.jpg" -F "blur_strength=35" -F "blur_method=gaussian"`
     - With padding: `POST /faces/blur -F "file=@image.jpg" -F "blur_strength=25" -F "face_padding=20"`
+
+    All options can be sent as query parameters or as multipart form fields next to the file.
     """
+    params = await form_fallback(
+        request,
+        {
+            "intensity": intensity,
+            "blur_strength": blur_strength,
+            "confidence_threshold": confidence_threshold,
+            "face_padding": face_padding,
+            "blur_method": blur_method,
+        },
+    )
+    intensity = params["intensity"]
+    blur_method = params["blur_method"]
+    blur_strength = parse_number(params["blur_strength"], int, "blur_strength")
+    confidence_threshold = parse_number(params["confidence_threshold"], float, "confidence_threshold")
+    face_padding = parse_number(params["face_padding"], int, "face_padding")
     logger.debug(f"Face blur request - intensity: {intensity}, blur_strength: {blur_strength}, face_padding: {face_padding}, blur_method: {blur_method}")
 
     # Validate image
@@ -192,10 +192,8 @@ async def blur_faces(
         blur_k += 1
 
     # Get face padding - priority: direct param > config
-    if face_padding is not None:
-        padding = face_padding
-    else:
-        padding = settings.face_blur_padding
+    padding_explicit = face_padding is not None
+    padding = face_padding if padding_explicit else settings.face_blur_padding
 
     # Get blur method - priority: direct param > config
     if blur_method is not None:
@@ -218,42 +216,48 @@ async def blur_faces(
         detect_confidence = settings.face_detection_confidence
 
     # Detect faces with appropriate confidence
-    detector = get_face_detector(detect_confidence)
-    results = detector.process(cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB))
+    rgb = np.array(pil_image)
+    try:
+        faces = await run_in_threadpool(detect_faces, rgb, detect_confidence)
+    except RuntimeError as e:
+        logger.error(f"Face detection unavailable: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Face detection model not available",
+        )
 
     faces_detected = 0
-    if results.detections:
-        for detection in results.detections:
-            # Get bounding box
-            bbox = detection.location_data.relative_bounding_box
-            x_min = max(0, int(bbox.xmin * w) - padding)
-            y_min = max(0, int(bbox.ymin * h) - padding)
-            x_max = min(w, int((bbox.xmin + bbox.width) * w) + padding)
-            y_max = min(h, int((bbox.ymin + bbox.height) * h) + padding)
+    for face in faces:
+        # Without explicit padding it scales with the face (hair, ears, chin stay covered)
+        pad = padding if padding_explicit else max(padding, int(0.15 * max(face.w, face.h)))
+        x_min = max(0, face.x - pad)
+        y_min = max(0, face.y - pad)
+        x_max = min(w, face.x + face.w + pad)
+        y_max = min(h, face.y + face.h + pad)
+        if x_max - x_min < 2 or y_max - y_min < 2:
+            continue
+        # Apply blur to face region
+        face_region = cv_image[y_min:y_max, x_min:x_max]
 
-            # Apply blur to face region
-            face_region = cv_image[y_min:y_max, x_min:x_max]
+        if blur_method_used == 'pixelate':
+            # For pixelation: blur_strength maps to pixel_size (3-20 optimal)
+            # 10->3, 50->5, 100->8, 150->12, 200->15
+            pixel_size = max(2, min(20, blur_k // 15))
+            blurred = apply_pixelation(face_region, pixel_size)
+        elif blur_method_used == 'hybrid':
+            blurred = apply_hybrid_blur(face_region, blur_k)
+        else:  # gaussian (default)
+            blurred = apply_gaussian_blur(face_region, blur_k)
 
-            if blur_method_used == 'pixelate':
-                # For pixelation: blur_strength maps to pixel_size (3-20 optimal)
-                # 10->3, 50->5, 100->8, 150->12, 200->15
-                pixel_size = max(2, min(20, blur_k // 15))
-                blurred = apply_pixelation(face_region, pixel_size)
-            elif blur_method_used == 'hybrid':
-                blurred = apply_hybrid_blur(face_region, blur_k)
-            else:  # gaussian (default)
-                blurred = apply_gaussian_blur(face_region, blur_k)
+        # Apply oval mask to blend blurred region with original
+        blurred = apply_oval_mask(face_region, blurred)
 
-            # Apply oval mask to blend blurred region with original
-            blurred = apply_oval_mask(face_region, blurred)
+        cv_image[y_min:y_max, x_min:x_max] = blurred
 
-            cv_image[y_min:y_max, x_min:x_max] = blurred
-
-            faces_detected += 1
+        faces_detected += 1
 
     # Convert back to PIL and then to base64
     result_pil = cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB)
-    import PIL.Image
     result_pil = PIL.Image.fromarray(result_pil)
     base64_image = image_to_base64(result_pil)
 

@@ -52,3 +52,6 @@ Thumbs.db
 models/
 *.onnx
 *.pth
+*.tflite
+*.task
+eval-data/

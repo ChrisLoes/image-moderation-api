@@ -14,9 +14,9 @@ import io
 class TestOvalMaskingE2E:
     """E2E tests for oval masking feature."""
 
-    def test_oval_masking_applied(self, api_is_running, api_url, api_headers, simple_test_image, image_to_bytes):
+    def test_oval_masking_applied(self, api_is_running, api_url, api_headers, face_test_image, image_to_bytes):
         """Test that oval masking is applied to blurred regions."""
-        img_bytes = image_to_bytes(simple_test_image)
+        img_bytes = image_to_bytes(face_test_image)
 
         response = requests.post(
             f"{api_url}/faces/blur",
@@ -33,9 +33,9 @@ class TestOvalMaskingE2E:
         # Oval masking means blur is applied, should have different image
         assert len(data['processed_image_base64']) > 0
 
-    def test_oval_masking_smooth_transitions(self, api_is_running, api_url, api_headers, simple_test_image, image_to_bytes, decode_base64_image):
+    def test_oval_masking_smooth_transitions(self, api_is_running, api_url, api_headers, face_test_image, image_to_bytes, decode_base64_image):
         """Test that oval masking creates smooth transitions."""
-        img_bytes = image_to_bytes(simple_test_image)
+        img_bytes = image_to_bytes(face_test_image)
 
         response = requests.post(
             f"{api_url}/faces/blur",
@@ -59,10 +59,10 @@ class TestOvalMaskingE2E:
         except Exception as e:
             pytest.fail(f"Failed to decode image with oval masking: {e}")
 
-    def test_oval_masking_all_blur_methods(self, api_is_running, api_url, api_headers, simple_test_image, image_to_bytes):
+    def test_oval_masking_all_blur_methods(self, api_is_running, api_url, api_headers, face_test_image, image_to_bytes):
         """Test that oval masking works with all blur methods."""
         for method in ['gaussian', 'pixelate', 'hybrid']:
-            img_bytes = image_to_bytes(simple_test_image)
+            img_bytes = image_to_bytes(face_test_image)
             response = requests.post(
                 f"{api_url}/faces/blur",
                 files={'file': ('test.png', img_bytes, 'image/png')},
@@ -80,9 +80,9 @@ class TestOvalMaskingE2E:
 class TestFullRangeFaceDetectionE2E:
     """E2E tests for full-range face detection."""
 
-    def test_full_range_detects_multiple_faces(self, api_is_running, api_url, api_headers, realistic_test_image, image_to_bytes):
+    def test_full_range_detects_multiple_faces(self, api_is_running, api_url, api_headers, group_test_image, image_to_bytes):
         """Test that full-range model detects more faces than short-range."""
-        img_bytes = image_to_bytes(realistic_test_image)
+        img_bytes = image_to_bytes(group_test_image)
 
         response = requests.post(
             f"{api_url}/faces/blur",
@@ -97,9 +97,9 @@ class TestFullRangeFaceDetectionE2E:
         # Full-range should detect multiple faces
         assert data['faces_detected'] >= 1, "Full-range should detect at least 1 face"
 
-    def test_full_range_with_aggressive_confidence(self, api_is_running, api_url, api_headers, realistic_test_image, image_to_bytes):
+    def test_full_range_with_aggressive_confidence(self, api_is_running, api_url, api_headers, group_test_image, image_to_bytes):
         """Test full-range model with aggressive face detection threshold."""
-        img_bytes = image_to_bytes(realistic_test_image)
+        img_bytes = image_to_bytes(group_test_image)
 
         response = requests.post(
             f"{api_url}/faces/blur",
@@ -119,9 +119,9 @@ class TestFullRangeFaceDetectionE2E:
         # Should detect multiple faces with aggressive threshold
         assert data['faces_detected'] >= 1
 
-    def test_full_range_with_padding(self, api_is_running, api_url, api_headers, realistic_test_image, image_to_bytes):
+    def test_full_range_with_padding(self, api_is_running, api_url, api_headers, group_test_image, image_to_bytes):
         """Test full-range detection with custom padding."""
-        img_bytes = image_to_bytes(realistic_test_image)
+        img_bytes = image_to_bytes(group_test_image)
 
         response = requests.post(
             f"{api_url}/faces/blur",
@@ -145,9 +145,9 @@ class TestFullRangeFaceDetectionE2E:
 class TestCombinedFeaturesE2E:
     """E2E tests for combined features: oval masking + full-range detection."""
 
-    def test_oval_masking_with_full_range_aggressive(self, api_is_running, api_url, api_headers, realistic_test_image, image_to_bytes):
+    def test_oval_masking_with_full_range_aggressive(self, api_is_running, api_url, api_headers, group_test_image, image_to_bytes):
         """Test oval masking with full-range detection and aggressive thresholds."""
-        img_bytes = image_to_bytes(realistic_test_image)
+        img_bytes = image_to_bytes(group_test_image)
 
         response = requests.post(
             f"{api_url}/faces/blur",
@@ -168,9 +168,9 @@ class TestCombinedFeaturesE2E:
         assert data['faces_detected'] >= 1
         assert len(data['processed_image_base64']) > 10000  # Should have substantial image data
 
-    def test_oval_masking_pixelation_combination(self, api_is_running, api_url, api_headers, simple_test_image, image_to_bytes, decode_base64_image):
+    def test_oval_masking_pixelation_combination(self, api_is_running, api_url, api_headers, face_test_image, image_to_bytes, decode_base64_image):
         """Test oval masking combined with pixelation blur."""
-        img_bytes = image_to_bytes(simple_test_image)
+        img_bytes = image_to_bytes(face_test_image)
 
         response = requests.post(
             f"{api_url}/faces/blur",
@@ -197,9 +197,9 @@ class TestCombinedFeaturesE2E:
         except Exception as e:
             pytest.fail(f"Failed to decode pixelated oval-masked image: {e}")
 
-    def test_oval_masking_hybrid_blur_combination(self, api_is_running, api_url, api_headers, simple_test_image, image_to_bytes, decode_base64_image):
+    def test_oval_masking_hybrid_blur_combination(self, api_is_running, api_url, api_headers, face_test_image, image_to_bytes, decode_base64_image):
         """Test oval masking combined with hybrid blur method."""
-        img_bytes = image_to_bytes(simple_test_image)
+        img_bytes = image_to_bytes(face_test_image)
 
         response = requests.post(
             f"{api_url}/faces/blur",

@@ -12,13 +12,15 @@ class Settings(BaseSettings):
     face_detection_confidence: float = float(os.getenv("FACE_DETECTION_CONFIDENCE", "0.5"))
     face_blur_padding: int = int(os.getenv("FACE_BLUR_PADDING", "10"))
     face_blur_method: str = os.getenv("FACE_BLUR_METHOD", "gaussian")  # gaussian, pixelate, or hybrid
-    # Intensity levels: low (0.3), medium (0.5), high (0.8) - can be overridden per request
+    # Intensity levels: low (0.8), medium (0.5), high (0.3) - can be overridden per request
     face_detection_intensity: str = os.getenv("FACE_DETECTION_INTENSITY", "medium")
 
     # NSFW Detection Settings
     nsfw_threshold: float = float(os.getenv("NSFW_THRESHOLD", "0.6"))
     # Intensity levels: low (0.8), medium (0.6), high (0.4) - can be overridden per request
     nsfw_detection_intensity: str = os.getenv("NSFW_DETECTION_INTENSITY", "medium")
+    # Also flag offensive hand gestures (middle finger) - can be overridden per request
+    nsfw_check_gestures: bool = os.getenv("NSFW_CHECK_GESTURES", "true").lower() in ("1", "true", "yes")
 
     # Image Upload Settings
     max_file_size: int = int(os.getenv("MAX_FILE_SIZE", "8388608"))  # 8 MB
@@ -34,12 +36,15 @@ class Settings(BaseSettings):
         return set(key.strip() for key in self.api_keys.split(",") if key.strip())
 
     def get_face_detection_confidence(self, intensity: str | None = None) -> float:
-        """Get face detection confidence threshold based on intensity level."""
+        """Get face detection confidence threshold based on intensity level.
+
+        Higher intensity = lower threshold = more faces found and blurred.
+        """
         intensity = intensity or self.face_detection_intensity
         thresholds = {
-            "low": 0.3,
-            "medium": 0.5,
-            "high": 0.8,
+            "low": 0.8,      # Only clearly visible faces
+            "medium": 0.5,   # Balanced
+            "high": 0.3,     # Also small, blurry or half hidden faces (more false hits)
         }
         return thresholds.get(intensity.lower(), self.face_detection_confidence)
 

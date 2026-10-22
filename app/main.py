@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from app.config import settings
 from app.models import HealthResponse
+from app import model_files
 from app.routers import faces, nsfw
 
 # Setup logging directory
@@ -172,9 +173,8 @@ async def health_check() -> HealthResponse:
     - **unhealthy**: Critical services unavailable
 
     ## Service Status Values
-    - **ready**: Service available and responding
-    - **unavailable**: Service not available (e.g., model missing)
-    - **degraded**: Service available but operating at reduced capacity
+    - **ready**: Model files present, service available
+    - **not_loaded**: Model files missing; they are downloaded on the first request
 
     This endpoint does not require authentication and can be used for:
     - Kubernetes/Docker health checks
@@ -182,12 +182,17 @@ async def health_check() -> HealthResponse:
     - Monitoring dashboards
     - Readiness/liveness checks
     """
+    def state(*keys: str) -> str:
+        # "ready" = model files present; otherwise they are downloaded on first use
+        return "ready" if all(model_files.is_available(k) for k in keys) else "not_loaded"
+
     return HealthResponse(
         status="healthy",
         version="1.0.0",
         services={
-            "face_detection": "ready",
-            "nsfw_detection": "ready",
+            "face_detection": state("face_yunet", "face_blazeface"),
+            "nsfw_detection": state("nudenet"),
+            "gesture_detection": state("hand_landmarker"),
         },
     )
 

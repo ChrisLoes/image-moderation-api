@@ -21,7 +21,7 @@ class BlurFacesRequest(BaseModel):
         description="Face detection confidence threshold (0.0-1.0). "
         "Lower values detect more faces (including ambiguous ones). "
         "Overrides intensity parameter. "
-        "Low: 0.3, Medium: 0.5, High: 0.8",
+        "Low: 0.8, Medium: 0.5, High: 0.3",
         example=0.5,
     )
     intensity: Optional[str] = Field(
@@ -70,33 +70,50 @@ class NSFWCheckRequest(BaseModel):
     return_details: Optional[bool] = Field(
         default=False,
         description="Include detailed breakdown of confidence scores for all categories "
-        "(safe, partially_nude, nude)",
+        "(safe, partially_nude, nude, offensive_gesture) and the individual findings",
     )
 
 
 class NSFWDetection(BaseModel):
-    """NSFW detection result for a single category."""
+    """A single finding in the image (body part or hand gesture)."""
 
-    label: str = Field(description="Category label (safe, partially_nude, nude)")
+    label: str = Field(
+        description="What was found, e.g. 'FEMALE_BREAST_EXPOSED' (NudeNet class) or 'middle_finger'"
+    )
+    category: str = Field(description="Category the finding counts towards: nude, partially_nude, offensive_gesture")
     confidence: float = Field(description="Confidence score (0.0-1.0)")
+    box: list[int] = Field(description="Bounding box in pixels: [x, y, width, height]")
 
 
 class NSFWCheckResponse(BaseModel):
     """Response model for NSFW content checking endpoint."""
 
     success: bool = Field(description="Whether the analysis was successful")
-    is_nsfw: bool = Field(description="Whether image contains NSFW content (based on threshold)")
+    is_nsfw: bool = Field(description="Whether image contains NSFW content (nsfw_score above the threshold)")
+    nsfw_score: float = Field(
+        description="Overall score (0.0-1.0) how likely the image is not safe for work. "
+        "Highest of: nude score, offensive gesture score and half the partially_nude score "
+        "(swimwear/underwear alone never exceeds 0.5). Compare against your own threshold."
+    )
     confidence: float = Field(
         description="Confidence score of the primary detection (0.0-1.0). "
         "Higher = more confident in that category"
     )
     primary_detection: str = Field(
-        description="The category with highest confidence: 'safe', 'partially_nude', or 'nude'"
+        description="The category with highest score: 'safe', 'partially_nude', 'nude' or 'offensive_gesture'"
+    )
+    reasons: list[str] = Field(
+        default_factory=list,
+        description="Categories that exceeded the threshold, e.g. ['nude', 'offensive_gesture']. Empty if safe.",
     )
     detections: Optional[dict[str, float]] = Field(
         None,
-        description="Confidence scores for all categories when return_details=true. "
-        "Example: {'safe': 0.88, 'partially_nude': 0.08, 'nude': 0.04}",
+        description="Scores for all categories when return_details=true. "
+        "Example: {'safe': 0.88, 'partially_nude': 0.08, 'nude': 0.04, 'offensive_gesture': 0.0}",
+    )
+    findings: Optional[list[NSFWDetection]] = Field(
+        None,
+        description="Individual findings with boxes when return_details=true",
     )
 
 

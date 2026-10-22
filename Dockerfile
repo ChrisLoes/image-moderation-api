@@ -3,8 +3,11 @@ FROM python:3.14-slim
 WORKDIR /app
 
 # Install system dependencies
+# libegl1/libgles2: required by MediaPipe >= 0.10.30 (Tasks API), even on CPU
 RUN apt-get update && apt-get install -y \
     libgl1 \
+    libegl1 \
+    libgles2 \
     libglib2.0-0 \
     curl \
     && rm -rf /var/lib/apt/lists/*
@@ -18,23 +21,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application and entrypoint
 COPY app/ ./app/
 COPY entrypoint.sh .
-COPY scripts/download_nsfw_model.py ./scripts/
-COPY scripts/download_mediapipe_models.py ./scripts/
+COPY scripts/download_models.py ./scripts/
 
 # Make entrypoint executable, create logs and models directories
-RUN chmod +x entrypoint.sh && mkdir -p logs models/mediapipe
+RUN chmod +x entrypoint.sh && mkdir -p logs models
 
-# Download latest models before creating non-root user
-# NSFW model is required for NSFW detection endpoint
-RUN echo "Downloading NSFW model (required)..." && \
-    python scripts/download_nsfw_model.py && \
-    echo "✅ NSFW model downloaded successfully" || \
-    (echo "⚠️  NSFW model download failed, will retry at runtime" && exit 0)
-
-# MediaPipe models are loaded dynamically on first use
-RUN echo "Downloading MediaPipe models (optional)..." && \
-    timeout 300 python scripts/download_mediapipe_models.py || \
-    echo "✅ MediaPipe models will be downloaded at runtime"
+# Download and verify all models (faces, nudity, gestures). The build fails if a model
+# is missing - an image without models would silently return 503 or unblurred images.
+ENV MODELS_DIR=/app/models
+RUN python scripts/download_models.py
 
 # Create non-root user for security
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app

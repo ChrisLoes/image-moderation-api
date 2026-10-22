@@ -1,75 +1,78 @@
-import numpy as np
-from PIL import Image
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, status
-from typing import Optional
 import logging
+from typing import Optional
+
+import numpy as np
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi.concurrency import run_in_threadpool
+
 from app.auth import verify_api_key
-from app.models import NSFWCheckRequest, NSFWCheckResponse
-from app.utils import validate_image
 from app.config import settings
+from app.detectors import gestures, nudity
+from app.models import NSFWCheckResponse, NSFWDetection
+from app.utils import form_fallback, parse_bool, parse_number, validate_image
 
 router = APIRouter(prefix="/nsfw", tags=["NSFW Detection"])
 logger = logging.getLogger(__name__)
 
-nsfw_model = None
+# Swimwear/underwear ("partially_nude") alone should never outweigh real nudity:
+# it counts half towards nsfw_score, so it stays <= 0.5.
+PARTIAL_WEIGHT = 0.5
+# Genital/buttock hits that lie mostly inside a hand are almost always fingers
+HAND_OVERLAP_CLASSES = {"MALE_GENITALIA_EXPOSED", "FEMALE_GENITALIA_EXPOSED", "BUTTOCKS_EXPOSED", "ANUS_EXPOSED"}
 
 
-def get_nsfw_detector():
-    """
-    Lazy load NSFW detector using NudeNet v3 (ONNX).
-
-    For production, download the model:
-    https://github.com/notAI-tech/NudeNet/releases/tag/v3
-    """
-    global nsfw_model
-    if nsfw_model is None:
-        try:
-            import onnxruntime as ort
-
-            model_path = "models/classifier_nsfw.onnx"
-            providers = ["TensorrtExecutionProvider", "CUDAExecutionProvider", "CPUExecutionProvider"]
-            nsfw_model = ort.InferenceSession(model_path, providers=providers)
-        except FileNotFoundError:
-            logger.warning("NSFW model not found at models/classifier_nsfw.onnx")
-            logger.info("Download from: https://github.com/notAI-tech/NudeNet/releases/tag/v3")
-            nsfw_model = None
-        except ImportError as e:
-            logger.error(f"ONNX Runtime not available: {str(e)}")
-            logger.warning("NSFW detection will not be available")
-            nsfw_model = None
-        except Exception as e:
-            logger.error(f"Failed to load NSFW model: {str(e)}")
-            nsfw_model = None
-    return nsfw_model
+def _covered_by(inner: tuple[int, int, int, int], outer: tuple[int, int, int, int]) -> float:
+    ix0, iy0, iw, ih = inner
+    ox0, oy0, ow, oh = outer
+    w = max(0, min(ix0 + iw, ox0 + ow) - max(ix0, ox0))
+    h = max(0, min(iy0 + ih, oy0 + oh) - max(iy0, oy0))
+    return (w * h) / (iw * ih) if iw * ih > 0 else 0.0
 
 
-def prepare_image_for_nsfw(image: Image.Image) -> np.ndarray:
-    """Prepare image for NudeNet v3 model (usually 224x224 input)."""
-    # Resize to model input size
-    image = image.resize((224, 224), Image.Resampling.LANCZOS)
+def analyze_image(rgb: np.ndarray, check_gestures: bool) -> tuple[dict[str, float], list[NSFWDetection]]:
+    """Run all NSFW detectors. Returns category scores and individual findings."""
+    hands = gestures.detect_offensive_gestures(rgb) if check_gestures else []
+    parts = nudity.detect_body_parts(rgb)
 
-    # Convert to numpy array and normalize
-    img_array = np.array(image, dtype=np.float32)
+    parts = [
+        p
+        for p in parts
+        if not (p.label in HAND_OVERLAP_CLASSES and any(_covered_by(p.box, h.box) > 0.5 for h in hands))
+    ]
 
-    # Normalize (ImageNet normalization)
-    img_array = img_array / 255.0
-    mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
-    std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
-    img_array = (img_array - mean) / std
+    findings: list[NSFWDetection] = []
+    for p in parts:
+        if p.label in nudity.NUDE_CLASSES:
+            category = "nude"
+        elif p.label in nudity.PARTIAL_CLASSES:
+            category = "partially_nude"
+        else:
+            continue
+        findings.append(NSFWDetection(label=p.label, category=category, confidence=round(p.score, 4), box=list(p.box)))
+    for h in hands:
+        if h.confidence > 0:
+            findings.append(
+                NSFWDetection(label=h.label, category="offensive_gesture", confidence=h.confidence, box=list(h.box))
+            )
 
-    # Add batch dimension: (1, 3, 224, 224) - NCHW format expected by ONNX
-    img_array = np.transpose(img_array, (2, 0, 1))
-    img_array = np.expand_dims(img_array, axis=0)
+    scores = nudity.nudity_scores(parts)
+    scores["offensive_gesture"] = max((h.confidence for h in hands), default=0.0)
+    return scores, sorted(findings, key=lambda f: -f.confidence)
 
-    return img_array
+
+def nsfw_score_from(scores: dict[str, float]) -> float:
+    return round(
+        max(scores["nude"], scores["offensive_gesture"], scores["partially_nude"] * PARTIAL_WEIGHT), 4
+    )
 
 
 @router.post(
     "/check",
     response_model=NSFWCheckResponse,
     summary="Check image for NSFW content",
-    description="Analyze image for NSFW content using NudeNet v3 ONNX model. "
-    "Returns classification confidence scores and boolean flag for easy content filtering.",
+    description="Analyze an image for nudity (NudeNet v3 body-part detector) and offensive hand "
+    "gestures (middle finger, MediaPipe hand landmarks). Returns an overall nsfw_score, a boolean "
+    "flag and the reasons.",
     responses={
         200: {
             "description": "Successfully analyzed image",
@@ -77,10 +80,17 @@ def prepare_image_for_nsfw(image: Image.Image) -> np.ndarray:
                 "application/json": {
                     "example": {
                         "success": True,
-                        "is_nsfw": False,
-                        "confidence": 0.88,
-                        "primary_detection": "safe",
-                        "detections": {"safe": 0.88, "partially_nude": 0.08, "nude": 0.04},
+                        "is_nsfw": True,
+                        "nsfw_score": 0.91,
+                        "confidence": 0.91,
+                        "primary_detection": "offensive_gesture",
+                        "reasons": ["offensive_gesture"],
+                        "detections": {
+                            "safe": 0.09,
+                            "partially_nude": 0.0,
+                            "nude": 0.0,
+                            "offensive_gesture": 0.91,
+                        },
                     }
                 }
             },
@@ -88,33 +98,35 @@ def prepare_image_for_nsfw(image: Image.Image) -> np.ndarray:
         400: {"description": "Invalid image format or dimensions"},
         401: {"description": "Missing or invalid API key"},
         413: {"description": "File too large (exceeds MAX_FILE_SIZE)"},
-        503: {"description": "NSFW model not loaded (models/classifier_nsfw.onnx missing)"},
+        503: {"description": "NSFW model could not be loaded"},
     },
 )
 async def check_nsfw(
+    request: Request,
     file: UploadFile = File(
         ...,
-        description="Image file to analyze (JPEG, PNG, GIF, WebP). Max 8 MB, max 4000×4000 px.",
+        description="Image file to analyze (JPEG, PNG, GIF, WebP, HEIC). Max 8 MB, max 4000×4000 px.",
     ),
     intensity: Optional[str] = None,
     threshold: Optional[float] = None,
-    return_details: Optional[bool] = False,
+    return_details: Optional[bool] = None,
+    check_gestures: Optional[bool] = None,
     api_key: str = Depends(verify_api_key),
 ) -> NSFWCheckResponse:
     """
-    Detect NSFW content in image.
+    Detect NSFW content in an image.
 
     ## How It Works
-    1. Receives image file and configuration parameters
-    2. Resizes image to 224×224 for NudeNet model input
-    3. Applies ImageNet normalization
-    4. Runs ONNX inference on pre-trained NudeNet classifier
-    5. Returns classification results with confidence scores
+    1. **Nudity**: NudeNet v3 finds body parts (exposed or covered) at two resolutions
+    2. **Offensive gestures**: MediaPipe hand landmarks; a stretched middle finger with
+       folded index and ring finger counts as "middle finger"
+    3. Scores are combined into `nsfw_score` and compared against the threshold
 
     ## Categories
-    - **safe**: Image contains no nudity or sexual content
-    - **partially_nude**: Image contains partial nudity or suggestive content
-    - **nude**: Image contains full nudity or explicit content
+    - **safe**: nothing found
+    - **partially_nude**: covered intimate areas (underwear, swimwear) – counts half
+    - **nude**: exposed genitals, anus, female breasts or buttocks
+    - **offensive_gesture**: middle finger
 
     ## Parameter Priority (highest to lowest)
     1. Explicit `threshold` parameter
@@ -122,102 +134,93 @@ async def check_nsfw(
     3. Environment/config defaults
 
     ## Intensity Levels
-    - **low**: Threshold=0.8 (lenient, only flag obvious NSFW) - Good for UGC
+    - **low**: Threshold=0.8 (lenient, only flag obvious NSFW)
     - **medium**: Threshold=0.6 (balanced) - Recommended default
-    - **high**: Threshold=0.4 (strict, flags questionable content) - For child safety/compliance
+    - **high**: Threshold=0.4 (strict, flags questionable content)
 
-    ## Return Details
-    - Without `return_details`: Only returns primary category + overall decision
-    - With `return_details=true`: Returns confidence scores for all categories
+    ## Other Parameters
+    - `return_details=true`: scores for all categories and the individual findings with boxes
+    - `check_gestures=false`: skip gesture detection (default from `NSFW_CHECK_GESTURES`, true)
 
-    ## Examples
-    - Basic check: `POST /nsfw/check -F "file=@image.jpg"`
-    - Detailed results: `POST /nsfw/check -F "file=@image.jpg" -F "return_details=true"`
-    - High intensity: `POST /nsfw/check -F "file=@image.jpg" -F "intensity=high"`
-    - Custom threshold: `POST /nsfw/check -F "file=@image.jpg" -F "threshold=0.5"`
-
-    ## Model Info
-    - **Model**: NudeNet v3 ONNX
-    - **Input**: 224×224 RGB image (normalized)
-    - **Output**: 3-class probabilities (safe, partially_nude, nude)
-    - **Download**: https://github.com/notAI-tech/NudeNet/releases/tag/v3
+    All options can be sent as query parameters or as multipart form fields next to the file.
     """
+    params = await form_fallback(
+        request,
+        {
+            "intensity": intensity,
+            "threshold": threshold,
+            "return_details": return_details,
+            "check_gestures": check_gestures,
+        },
+    )
+    intensity = params["intensity"]
+    threshold = parse_number(params["threshold"], float, "threshold")
+    return_details = parse_bool(params["return_details"])
+    check_gestures = parse_bool(params["check_gestures"])
     logger.debug(
         f"NSFW check request - intensity: {intensity}, threshold: {threshold}, "
-        f"return_details: {return_details}"
+        f"return_details: {return_details}, check_gestures: {check_gestures}"
     )
 
-    # Validate image
     pil_image = await validate_image(file)
-    logger.debug(f"Image validated - size: {pil_image.size}")
+    rgb = np.array(pil_image)
+    gestures_enabled = settings.nsfw_check_gestures if check_gestures is None else check_gestures
 
-    # Get model
-    model = get_nsfw_detector()
-    if model is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="NSFW detection model not loaded. Ensure models/classifier_nsfw.onnx exists.",
-        )
+    if threshold is not None:
+        decision_threshold = threshold
+    elif intensity:
+        decision_threshold = settings.get_nsfw_threshold(intensity)
+    else:
+        decision_threshold = settings.nsfw_threshold
 
     try:
-        # Prepare image
-        prepared_image = prepare_image_for_nsfw(pil_image)
-
-        # Get model input/output names
-        input_name = model.get_inputs()[0].name
-        output_name = model.get_outputs()[0].name
-
-        # Run inference
-        predictions = model.run([output_name], {input_name: prepared_image})[0]
-
-        # Parse results (NudeNet v3 typically returns probabilities for multiple categories)
-        # Common categories: ['nude', 'partially_nude', 'safe']
-        # Adjust based on your specific model version
-        predictions = predictions[0]
-
-        # Get threshold - priority: direct param > intensity > config
-        if threshold is not None:
-            decision_threshold = threshold
-        elif intensity:
-            decision_threshold = settings.get_nsfw_threshold(intensity)
-        else:
-            decision_threshold = settings.nsfw_threshold
-
-        # Determine if NSFW (adjust category indices based on your model)
-        # Typical: index 0 = safe, index 1 = partially_nude, index 2 = nude
-        is_nsfw = max(predictions[1:]) > decision_threshold if len(predictions) > 1 else predictions[0] > decision_threshold
-
-        # Get primary detection
-        categories = ["safe", "partially_nude", "nude"]
-        primary_idx = np.argmax(predictions)
-        primary_detection = categories[primary_idx] if primary_idx < len(categories) else "unknown"
-        confidence = float(predictions[primary_idx])
-
-        detections = None
-        if return_details:
-            detections = {cat: float(pred) for cat, pred in zip(categories, predictions)}
-
-        response = NSFWCheckResponse(
-            success=True,
-            is_nsfw=bool(is_nsfw),
-            confidence=confidence,
-            primary_detection=primary_detection,
-            detections=detections,
+        scores, findings = await run_in_threadpool(analyze_image, rgb, gestures_enabled)
+    except (RuntimeError, OSError) as e:
+        # Model missing and download failed
+        logger.error(f"NSFW model unavailable: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="NSFW detection model not available",
         )
-
-        log_level = logging.WARNING if is_nsfw else logging.INFO
-        logger.log(
-            log_level,
-            f"NSFW check completed - is_nsfw: {is_nsfw}, "
-            f"primary: {primary_detection}, confidence: {confidence:.3f}, "
-            f"threshold: {decision_threshold}",
-        )
-
-        return response
-
     except Exception as e:
-        logger.error(f"Error during NSFW detection: {str(e)}", exc_info=True)
+        logger.error(f"Error during NSFW detection: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error processing image: {str(e)}",
+            detail="Error processing image",
         )
+
+    nsfw_score = nsfw_score_from(scores)
+    is_nsfw = nsfw_score > decision_threshold
+
+    weighted = {
+        "nude": scores["nude"],
+        "offensive_gesture": scores["offensive_gesture"],
+        "partially_nude": scores["partially_nude"] * PARTIAL_WEIGHT,
+    }
+    reasons = [category for category, score in weighted.items() if score > decision_threshold]
+    if is_nsfw:
+        primary_detection = max(weighted, key=weighted.get)
+        confidence = scores[primary_detection]
+    else:
+        primary_detection = "safe"
+        confidence = round(1 - nsfw_score, 4)
+
+    response = NSFWCheckResponse(
+        success=True,
+        is_nsfw=is_nsfw,
+        nsfw_score=nsfw_score,
+        confidence=confidence,
+        primary_detection=primary_detection,
+        reasons=reasons,
+        detections={"safe": round(1 - nsfw_score, 4), **scores} if return_details else None,
+        findings=findings if return_details else None,
+    )
+
+    log_level = logging.WARNING if is_nsfw else logging.INFO
+    logger.log(
+        log_level,
+        f"NSFW check completed - is_nsfw: {is_nsfw}, nsfw_score: {nsfw_score:.3f}, "
+        f"primary: {primary_detection}, reasons: {reasons}, threshold: {decision_threshold}, "
+        f"scores: {scores}",
+    )
+    return response

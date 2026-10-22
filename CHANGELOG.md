@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.1.0] - 2026-10-22
+
+### Fixed
+- App did not start with `mediapipe==1.1.0` (`mp.solutions` was removed). Migrated to the
+  MediaPipe Tasks API; Docker image installs `libegl1`/`libgles2`.
+- NSFW detection never worked: the model `classifier_nsfw.onnx` does not exist in NudeNet v3,
+  the download failed silently and `/nsfw/check` returned 503. Now uses the NudeNet v3
+  detector (checksum-verified, Docker build fails without models).
+- `/nsfw/check` now returns `nsfw_score` (read by wievoll-next, was always missing → 0).
+- Options sent as multipart form fields (as wievoll-next and the README do) were ignored;
+  form fields and query parameters are both accepted now.
+- Face intensity levels were inverted (`high` found fewer faces). Now low=0.8, medium=0.5,
+  high=0.3 confidence.
+- EXIF orientation of phone photos is applied before detection.
+- Face blur returns 503 instead of an unblurred image when no face detector is available.
+- Dependabot auto-merge ran tests with `continue-on-error`; failing updates were merged.
+
+### Added
+- Offensive gesture detection (middle finger) as NSFW category `offensive_gesture`
+  (`check_gestures`, `NSFW_CHECK_GESTURES`).
+- Face detection ensemble: OpenCV YuNet + MediaPipe BlazeFace.
+- `reasons` and `findings` (boxes) in the NSFW response; health check reports model state.
+- `scripts/download_models.py`, `scripts/evaluate_detectors.py`, `tests/test_detectors.py`.
+
 ## [v1.0.13] - 2026-07-16
 
 ### 🎯 Major Features

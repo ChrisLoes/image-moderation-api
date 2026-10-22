@@ -69,9 +69,10 @@ class TestConfigLoading:
 
     def test_face_confidence_intensity_levels(self):
         """Test that intensity levels map to correct confidence thresholds."""
-        assert settings.get_face_detection_confidence("low") == 0.3
+        # Higher intensity finds more faces, so its threshold is lower
+        assert settings.get_face_detection_confidence("low") == 0.8
         assert settings.get_face_detection_confidence("medium") == 0.5
-        assert settings.get_face_detection_confidence("high") == 0.8
+        assert settings.get_face_detection_confidence("high") == 0.3
 
     def test_nsfw_threshold_intensity_levels(self):
         """Test that intensity levels map to correct NSFW thresholds."""
@@ -87,13 +88,13 @@ class TestErrorHandling:
 
     def test_nsfw_check_requires_file(self):
         # Test that /nsfw/check requires a file - returns 422 (validation error) when empty
-        response = client.post("/nsfw/check", data={})
+        response = client.post("/nsfw/check", data={}, headers={"X-API-Key": "test-key"})
         # Returns 422 Unprocessable Entity for missing required file field
         assert response.status_code == 422
 
     def test_face_blur_requires_file(self):
         # Test that /faces/blur requires a file - returns 422 (validation error) when empty
-        response = client.post("/faces/blur", data={})
+        response = client.post("/faces/blur", data={}, headers={"X-API-Key": "test-key"})
         # Returns 422 Unprocessable Entity for missing required file field
         assert response.status_code == 422
 
