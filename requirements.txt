@@ -7,7 +7,7 @@ python-dotenv==1.2.4
 pillow==12.3.0
 pillow-heif==1.8.0
 numpy==2.5.4
-mediapipe==1.1.0
+mediapipe==1.1.1
 opencv-python==5.0.0.93
 onnxruntime==1.31.0
 httpx==0.28.1
